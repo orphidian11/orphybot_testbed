@@ -36,11 +36,11 @@
 #define R_R_B 13
 
 // constants
-const unsigned long delimiterStart = 0b1100; // const char delimiterStart = '[';
-const unsigned long delimiterEnd = 0b011; // const char delimiterEnd = ']';
-const int msgLength = 12;
-const String msgFormat = "[x-xxx-xxxx]";
-const int commandListSize = 10; // maximum of 10 commands can be sent
+const char DELIMITER_START = '['; // const unsigned long DELIMITER_START = 0b1100; 
+const char DELIMITER_END = ']'; // const unsigned long DELIMITER_END = 0b011; 
+const int MSG_LENGTH = 12;
+//const String msgFormat = "[x-xxx-xxxx]";
+const int COMMAND_LIST_SIZE = 10; // maximum of 10 commands can be sent
 
 // input
 boolean txEnd = false;
@@ -49,6 +49,7 @@ String readBuffer = "";
 int dir = 0; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
 int spd = 0; // 0 to 255
 int durationMs = 0;
+unsigned long rxMsg = 0; // 32 bit message
 
 /************************BEGIN SETUP******************************/
 void setup() {
@@ -78,98 +79,87 @@ void loop() {
   while (Serial.available()){
     incomingByte = Serial.read();
     readBuffer += char(incomingByte);
-//    
-//    if (incomingByte == delimiterEnd){
-//      txEnd = true;
-//    } else if (incomingByte == delimiterStart) {
-//      txEnd = false;
-//    }
+    
+    if (incomingByte == DELIMITER_END){
+      txEnd = true;
+    } else if (incomingByte == DELIMITER_START) {
+      txEnd = false;
+    }
   }
 
-//txEnd = true;
-//readBuffer = "[1-099-2000]";
-//readBuffer = "[1-255-1000][2-255-2000][3-255-3000][4-255-4000]";
-//  if (txEnd && readBuffer != ""){
-  if (readBuffer != ""){
-    Serial.println(readBuffer);
-//    int i;
+  if (txEnd && readBuffer != ""){
+//    Serial.println(readBuffer);
+    int i;
     
-//    // split the commands contained in the readBuffer
-//    int numberOfCommands = readBuffer.length() / msgLength;
-//    String commandList[commandListSize];
-//    if (numberOfCommands <= 1){ 
-//      // if there is only one command sent...
-//      commandList[0] = readBuffer;
-//    } else { 
-//      // if there are multiple commands sent
-//      for (i = 0; i < numberOfCommands; i++){
-//        commandList[i] = readBuffer.substring(0 + (i * msgLength), msgLength + (i * msgLength));
-//      }
-//    }
+    // split the commands contained in the readBuffer
+    int numberOfCommands = readBuffer.length() / MSG_LENGTH;
+    String commandList[COMMAND_LIST_SIZE];
+    if (numberOfCommands <= 1){ 
+      // if there is only one command sent...
+      commandList[0] = readBuffer;
+    } else { 
+      // if there are multiple commands sent
+      for (i = 0; i < numberOfCommands; i++){
+        commandList[i] = readBuffer.substring(0 + (i * MSG_LENGTH), MSG_LENGTH + (i * MSG_LENGTH));
+      }
+    }
 
     // iterate through commandList
-//    for (i = 0; i < numberOfCommands; i++){
-//      Serial.println(commandList[i]);
-//      dir = commandList[i].substring(1,2).toInt();
-//      spd = commandList[i].substring(3,6).toInt();
-//      durationMs = commandList[i].substring(7,11).toInt();
-//  
+    for (i = 0; i < numberOfCommands; i++){
+      rxMsg = atol(commandList[i].substring(1,12).c_str());
+      dir = (rxMsg & 0b00001110000000000000000000000000) >> 25; 
+      spd = (rxMsg & 0b00000001111111100000000000000000) >> 17; 
+      durationMs = (rxMsg & 0b00000000000000011111111111111000) >> 3; 
+  
 //      Serial.println("{" + String(dir) + "," + String(spd) + "," + String(durationMs) + "}");
-//  
-//      switch(dir){
-//        case 1: // forward
-//          setFrontLeftMotor(spd, 1);
-//          setFrontRightMotor(spd, 1);
-//          setRearLeftMotor(spd, 1);
-//          setRearRightMotor(spd, 1);
-//          break;
-//        case 2: // reverse
-//          setFrontLeftMotor(spd, 2);
-//          setFrontRightMotor(spd, 2);
-//          setRearLeftMotor(spd, 2);
-//          setRearRightMotor(spd, 2);
-//          break;
-//        case 3: // left
-//          setFrontLeftMotor(spd, 2);
-//          setFrontRightMotor(spd, 1);
-//          setRearLeftMotor(spd, 2);
-//          setRearRightMotor(spd, 1);
-//          break;
-//        case 4: // right
-//          setFrontLeftMotor(spd, 1);
-//          setFrontRightMotor(spd, 2);
-//          setRearLeftMotor(spd, 1);
-//          setRearRightMotor(spd, 2);
-//          break;
-//        case 0: // stop
-//        default:
-//          setFrontLeftMotor(spd, 0);
-//          setFrontRightMotor(spd, 0);
-//          setRearLeftMotor(spd, 0);
-//          setRearRightMotor(spd, 0);
-//          break;
-//      }
-//  
-//      // if delay is provided, proceed then stop
-//      if (durationMs > 0){
-//        delay(durationMs);
-//        setFrontLeftMotor(spd, 0);
-//        setFrontRightMotor(spd, 0);
-//        setRearLeftMotor(spd, 0);
-//        setRearRightMotor(spd, 0);
-//      } 
-//    }
-//  
+  
+      switch(dir){
+        case 1: // forward
+          setFrontLeftMotor(spd, 1);
+          setFrontRightMotor(spd, 1);
+          setRearLeftMotor(spd, 1);
+          setRearRightMotor(spd, 1);
+          break;
+        case 2: // reverse
+          setFrontLeftMotor(spd, 2);
+          setFrontRightMotor(spd, 2);
+          setRearLeftMotor(spd, 2);
+          setRearRightMotor(spd, 2);
+          break;
+        case 3: // left
+          setFrontLeftMotor(spd, 2);
+          setFrontRightMotor(spd, 1);
+          setRearLeftMotor(spd, 2);
+          setRearRightMotor(spd, 1);
+          break;
+        case 4: // right
+          setFrontLeftMotor(spd, 1);
+          setFrontRightMotor(spd, 2);
+          setRearLeftMotor(spd, 1);
+          setRearRightMotor(spd, 2);
+          break;
+        case 0: // stop
+        default:
+          setFrontLeftMotor(spd, 0);
+          setFrontRightMotor(spd, 0);
+          setRearLeftMotor(spd, 0);
+          setRearRightMotor(spd, 0);
+          break;
+      }
+  
+      // if delay is provided, proceed then stop
+      if (durationMs > 0){
+        delay(durationMs);
+        setFrontLeftMotor(spd, 0);
+        setFrontRightMotor(spd, 0);
+        setRearLeftMotor(spd, 0);
+        setRearRightMotor(spd, 0);
+      } 
+    }
+  
     readBuffer = "";
-//    txEnd = false;
-//    Serial.flush();
+    txEnd = false;
   } 
-
-//  setFrontLeftMotor(spd, 0);
-//  setFrontRightMotor(spd, 0);
-//  setRearLeftMotor(spd, 0);
-//  setRearRightMotor(spd, 0);
-
 }
 /************************END LOOP*********************************/
 
