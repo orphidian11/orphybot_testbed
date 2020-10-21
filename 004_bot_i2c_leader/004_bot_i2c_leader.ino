@@ -95,7 +95,7 @@ void loop() {
     sensorSubSysResp += rd;
   }
   currDistance = sensorSubSysResp.toFloat();
-//  Serial.println(sensorSubSysResp + " => " + String(currDistance));
+  Serial.println(sensorSubSysResp + " => " + String(currDistance));
 
   /**
    * Parse the transmission

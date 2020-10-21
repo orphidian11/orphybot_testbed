@@ -13,8 +13,8 @@
 #define SENSORS_SUBSYS 9
 #define SENSORS_SUBSYS_ANSSIZE 6 // number of characters
 
-#define HCSR04_TRIG_PIN 8
-#define HCSR04_ECHO_PIN 9
+#define HCSR04_TRIG_PIN 2
+#define HCSR04_ECHO_PIN 3
 
 // constants
 const int mps = 343; // speed of sound (m/s)
@@ -57,7 +57,7 @@ void requestSensorInfo(){
 void loop() {
   // put your main code here, to run repeatedly:
   distance = captureDistance();
-//  Serial.println(distance);
+  Serial.println(distance);
 }
 
 /**
