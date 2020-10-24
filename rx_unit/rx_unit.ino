@@ -18,7 +18,7 @@
 #include<Wire.h>
 
 // I2C followers address
-#define SENSORS_SUBSYS 9
+#define SENSORS_SUBSYS_ADDR 9
 #define SENSORS_SUBSYS_ANSSIZE 8 // character length
 
 // Front Left Motor
@@ -63,6 +63,7 @@ int durationMs = 0;
 unsigned long rxMsg = 0; // 32 bit message
 unsigned long prevMillis = 0;
 unsigned long currMillis = 0;
+int isSensorOverride = 0; // true or false
 
 // sensor data structure
 struct SensorData {
@@ -114,13 +115,15 @@ void loop() {
   currMillis = millis();
   if ((currMillis - prevMillis) > SENSOR_REQ_DELAY){
     prevMillis = currMillis;
-    Wire.requestFrom(SENSORS_SUBSYS, SENSORS_SUBSYS_ANSSIZE);
+    Wire.requestFrom(SENSORS_SUBSYS_ADDR, SENSORS_SUBSYS_ANSSIZE);
     Wire.readBytes((byte *)&sensorData, SENSORS_SUBSYS_ANSSIZE);
     Serial.println("V: " + String(sensorData.voltage) + " / D: " + String(sensorData.distance) + " / ms: " + prevMillis);
+    isSensorOverride = 1;
+    readBuffer = "000000000000"; // dummy value
   }
 
-  if (txEnd && readBuffer != ""){
-//    Serial.println(readBuffer);
+  // move the motors
+  if ((txEnd && readBuffer != "") || isSensorOverride){
     int i;
     
     // split the commands contained in the readBuffer
@@ -138,21 +141,26 @@ void loop() {
 
     // iterate through commandList
     for (i = 0; i < numberOfCommands; i++){
-      rxMsg = atol(commandList[i].substring(1,12).c_str());
-      dir = (rxMsg & 0b00001110000000000000000000000000) >> 25; 
-      spd = (rxMsg & 0b00000001111111100000000000000000) >> 17; 
-      durationMs = (rxMsg & 0b00000000000000011111111111111000) >> 3; 
+      if (isSensorOverride) {
+        // overrides based on sensor data
+        spd = 255;
+        durationMs = 0;
+        isSensorOverride = 0;
+        
+        if (sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX){
+          dir = 0; // stop if STOP_DISTANCE is reached
+        } else if (sensorData.distance <= REVERSE_DISTANCE_MAX){
+          dir = 2; // reverse if REVERSE_DISTANCE is reached
+        }
+      } else {
+        // tx signals
+        rxMsg = atol(commandList[i].substring(1,12).c_str());
+        dir = (rxMsg & 0b00001110000000000000000000000000) >> 25; 
+        spd = (rxMsg & 0b00000001111111100000000000000000) >> 17; 
+        durationMs = (rxMsg & 0b00000000000000011111111111111000) >> 3; 
+      }
   
 //      Serial.println("{" + String(dir) + "," + String(spd) + "," + String(durationMs) + "}");
-
-      // overrides based on sensor data
-      if (sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX){
-        dir = 0; // stop if STOP_DISTANCE is reached
-        Serial.println("STOP!!");
-      } else if (sensorData.distance <= REVERSE_DISTANCE_MAX){
-        dir = 2; // reverse if REVERSE_DISTANCE is reached
-        Serial.println("REVERSE!!");
-      }
   
       switch(dir){
         case 1: // forward

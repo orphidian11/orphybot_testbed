@@ -12,7 +12,7 @@
 #include<Wire.h>
 
 // I2C followers address
-#define SENSORS_SUBSYS 9
+#define SENSORS_SUBSYS_ADDR 9
 #define SENSORS_SUBSYS_ANSSIZE 8 // number of characters
 #define V_SENSOR A3
 #define HCSR04_TRIG 2
@@ -43,7 +43,7 @@ void setup() {
   pinMode(HCSR04_TRIG, OUTPUT);
   pinMode(HCSR04_ECHO, INPUT);
   
-  Wire.begin(SENSORS_SUBSYS); // run in follower mode
+  Wire.begin(SENSORS_SUBSYS_ADDR); // run in follower mode
   Wire.onRequest(requestSensorInfo); // event handler function for onRequest event
 
   Serial.begin(9600);
