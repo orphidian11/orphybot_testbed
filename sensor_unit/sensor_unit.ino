@@ -25,6 +25,7 @@
 
 // I2C followers addresses
 #define DRIVE_SUBSYS_ADDR 8
+#define DRIVE_DATA_ANSSIZE 2
 #define SENSORS_SUBSYS_ADDR 9
 #define SENSORS_SUBSYS_ANSSIZE 8 // number of characters
 #define V_SENSOR A3
@@ -45,6 +46,7 @@ const char DELIMITER_END = ']'; // const unsigned long DELIMITER_END = 0b011;
 const int MSG_LENGTH = 12;
 const int COMMAND_LIST_SIZE = 10; // maximum of 10 commands can be sent
 const unsigned long SENSOR_REQ_DELAY = 250; // delay between each request for sensor data
+const unsigned long DRIVE_POLL_MS = 500;
 const float STOP_DISTANCE_MIN = 0.11;
 const float STOP_DISTANCE_MAX = 0.15;
 const float REVERSE_DISTANCE_MIN = 0.0;
@@ -67,11 +69,22 @@ struct SensorData {
   float distance; // in meters
 };
 
+// drive data structure 
+struct DriveData {
+  int spd;
+};
+
 // drive command structure
 struct DriveCommand {
   int dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
   int spd; // 0 to 255
   int durationMs; // in milliseconds
+};
+
+// telemetry structure 
+struct Telemetry {
+  DriveData drive;
+  SensorData sensor;
 };
 
 /*********
@@ -169,7 +182,17 @@ void loop() {
     isSensorOverride = false;
   }
 
-  // send back telemetry
+  // every [DRIVE_POLL_MS] milliseconds, get the drive data
+  currMillis = millis();
+  DriveData driveData;
+  if ((currMillis - prevMillis) > DRIVE_POLL_MS){
+    prevMillis = currMillis;
+    driveData = requestDriveData();
+  }
+
+  // send back telemetry to tx_unit
+  Telemetry telemetry = {driveData, sensorData};
+  sendTelemetry(telemetry);
 } 
 
 /*********************
@@ -177,9 +200,29 @@ void loop() {
  *********************/
 
 /**
+ * Send back telemetry information to tx_unit
+ */
+void sendTelemetry(Telemetry telemetry){
+  Serial.println(String(sizeof(telemetry)) + " / spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance));
+//  Serial.write((byte *)&telemetry, sizeof telemetry);
+}
+
+/**
+ * Request DriveData from drive_unit
+ */
+DriveData requestDriveData(){
+  DriveData driveData;
+  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
+  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
+//  Serial.println("SPD: " + String(driveData.spd));
+  return driveData;
+}
+
+/**
  * Override the command if certain thresholds are reached
  */
 DriveCommand overrideCommand(SensorData sensorData){
+//  Serial.println("overrideCommand");
   DriveCommand driveCommand;
   
   driveCommand.spd = 255;

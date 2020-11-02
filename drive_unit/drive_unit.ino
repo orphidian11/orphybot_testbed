@@ -43,6 +43,12 @@ const int SPD_MIN = 0;
 const int SPD_MAX = 255;
 const int DURATION_MS_MIN = 0;
 const int DURATION_MS_MAX = 9999;
+const int DRIVE_QUEUE_LIMIT = 1; 
+
+// drive data structure 
+struct DriveData {
+  int spd;
+};
 
 // drive command structure
 struct DriveCommand {
@@ -56,6 +62,7 @@ QueueList<DriveCommand> driveQueue;
 /*********
  * SETUP *
  *********/
+
 void setup() {
   pinMode(F_L_SPD, OUTPUT);
   pinMode(F_L_A, OUTPUT);
@@ -73,6 +80,7 @@ void setup() {
   Wire.begin(DRIVE_SUBSYS_ADDR); // follower mode
   Wire.onReceive(receiveDriveCommand); 
   Wire.onRequest(sendSpeedData);
+//  pinMode(A4, INPUT);pinMode(A5, INPUT);
 
   Serial.begin(9600);
   Serial.println("DRIVE UNIT BEGIN!");
@@ -82,18 +90,24 @@ void setup() {
  * Receive the drive command and add it to the queue
  */
 void receiveDriveCommand(int numBytes){
+//  Serial.println("receiveDriveCommand");
   DriveCommand driveCommand;
   Wire.readBytes((byte *)&driveCommand, numBytes);
-//  Serial.println("dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
-  driveQueue.push(driveCommand);
+//  Serial.println("[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+  if (driveQueue.count() < DRIVE_QUEUE_LIMIT){
+    driveQueue.push(driveCommand);
+  }
 }
 
 /**
  * Send back speed data
  */
 void sendSpeedData(){
-  int speedData = 0; // dummy data for now
-  Wire.write(speedData); 
+//  Serial.println("sendSpeedData");
+  DriveData driveData;
+  driveData.spd = 100; // dummy data for now
+//  Serial.println("driveData: " + String(driveData.spd) + " / sizeof " + String(sizeof(driveData)));
+  Wire.write((byte *)&driveData, sizeof driveData);
 }
 
 /********
@@ -103,11 +117,10 @@ void loop() {
   // check the drive queue
   while(!driveQueue.isEmpty()){
     DriveCommand driveCommand = driveQueue.peek();
-//    Serial.println("** dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+//    Serial.println("**[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
     runDriveCommand(driveCommand);
     driveQueue.pop();
   }
-
 }
 
 /*********************

@@ -42,6 +42,7 @@ const unsigned long DELIM_END = 0b011;
 
 const int MSG_LENGTH = 12;
 const int COMMAND_LIST_SIZE = 10; // maximum of 10 commands can be sent
+const int TELEMETRY_SIZE = 10;
 
 // inputs
 int xVal;
@@ -57,7 +58,27 @@ boolean txEnd = false;
 byte incomingByte;
 String readBuffer = "";
 
-/************************BEGIN SETUP******************************/
+// sensor data structure
+struct SensorData {
+  float voltage; 
+  float distance; // in meters
+};
+
+// drive data structure 
+struct DriveData {
+  int spd;
+};
+
+// telemetry structure 
+struct Telemetry {
+  DriveData drive;
+  SensorData sensor;
+};
+
+/*********
+ * SETUP *
+ *********/
+ 
 void setup() {
   // put your setup code here, to run once:
   pinMode(JX, INPUT);
@@ -66,9 +87,11 @@ void setup() {
   Serial.begin(9600);
   Serial.println("TX BEGIN!");
 }
-/************************END SETUP********************************/
 
-/************************BEGIN LOOP*******************************/
+/********
+ * LOOP *
+ ********/
+ 
 void loop() {
   // get the previous direction
   prevDir = dir;
@@ -145,9 +168,11 @@ void loop() {
     transmit(dir, spd, durationMs);
   }
 }
-/************************END LOOP*********************************/
 
-/************************BEGIN PRIVATE FUNCTIONS******************/
+/*********************
+ * PRIVATE FUNCTIONS *
+ *********************/
+ 
 /**
  * Transmit the commands
  * @param d direction
@@ -169,4 +194,3 @@ void transmit(unsigned long d, unsigned long s, unsigned long ms){
     delay(TX_DELAY_MS);
 //  }
 }
-/************************END PRIVATE FUNCTIONS********************/
