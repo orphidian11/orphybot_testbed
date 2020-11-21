@@ -80,7 +80,6 @@ void setup() {
   Wire.begin(DRIVE_SUBSYS_ADDR); // follower mode
   Wire.onReceive(receiveDriveCommand); 
   Wire.onRequest(sendSpeedData);
-//  pinMode(A4, INPUT);pinMode(A5, INPUT);
 
   Serial.begin(9600);
   Serial.println("DRIVE UNIT BEGIN!");
