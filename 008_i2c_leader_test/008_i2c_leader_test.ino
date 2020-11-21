@@ -14,8 +14,9 @@
 
 void setup()
 {
-  Serial.begin(9600);
   Wire.begin(); // join i2c bus (address optional for master)
+  Serial.begin(9600);
+  Serial.println("LEADER BEGIN");
 }
 
 byte x = 0;

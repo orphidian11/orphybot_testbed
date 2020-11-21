@@ -17,17 +17,23 @@ void setup()
   Wire.begin(4);                // join i2c bus with address #4
   Wire.onReceive(receiveEvent); // register event
   Serial.begin(9600);           // start serial for output
+  Serial.println("FOLLOWER START");
+//  pinMode(A4, INPUT);
+//  pinMode(A5, INPUT);
 }
 
 void loop()
 {
   delay(100);
+//  Serial.println(String(analogRead(A4)) + " / " + String(analogRead(A4)));
 }
 
 // function that executes whenever data is received from master
 // this function is registered as an event, see setup()
 void receiveEvent(int howMany)
 {
+  Serial.println("receiveEvent");
+  
   while(1 < Wire.available()) // loop through all but the last
   {
     char c = Wire.read(); // receive byte as a character
