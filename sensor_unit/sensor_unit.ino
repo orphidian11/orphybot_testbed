@@ -22,6 +22,7 @@
  */
  
 #include<Wire.h>
+#include <SoftwareSerial.h>
 
 // I2C followers addresses
 #define DRIVE_SUBSYS_ADDR 8
@@ -31,7 +32,9 @@
 #define V_SENSOR A3
 #define HCSR04_TRIG 2
 #define HCSR04_ECHO 3
-#define LED_PIN 13
+#define LED_PIN 13 
+#define TX 10
+#define RX 11
 
 // constants
 const float VIN_MIN = 0;
@@ -87,6 +90,8 @@ struct Telemetry {
   SensorData sensor;
 };
 
+SoftwareSerial hc12(TX,RX);
+
 /*********
  * SETUP *
  *********/
@@ -97,6 +102,7 @@ void setup() {
   pinMode(HCSR04_ECHO, INPUT);
   
   Wire.begin(); // run in leader mode
+  hc12.begin(9600);
 
   Serial.begin(9600);
   Serial.println("SENSOR UNIT BEGIN!");
@@ -125,14 +131,15 @@ void loop() {
   }
 
   // capture HC-12 transmission
-  while (Serial.available()){
-    incomingByte = Serial.read();
+  while (hc12.available()){
+    incomingByte = hc12.read();
     readBuffer += char(incomingByte);
     
     if (incomingByte == DELIMITER_END){
       txEnd = true;
     } else if (incomingByte == DELIMITER_START) {
       txEnd = false;
+      readBuffer = "";
     }
   }
 
@@ -203,8 +210,9 @@ void loop() {
  * Send back telemetry information to tx_unit
  */
 void sendTelemetry(Telemetry telemetry){
-  Serial.println(String(sizeof(telemetry)) + " / spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance));
-//  Serial.write((byte *)&telemetry, sizeof telemetry);
+//  Serial.println("(" + String(sizeof(telemetry)) + ") spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance));
+  hc12.write((byte *)&telemetry, sizeof telemetry);
+//  hc12.print("test");
 }
 
 /**
@@ -212,8 +220,9 @@ void sendTelemetry(Telemetry telemetry){
  */
 DriveData requestDriveData(){
   DriveData driveData;
-  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
-  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
+  driveData.spd = 0;
+//  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
+//  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
 //  Serial.println("SPD: " + String(driveData.spd));
   return driveData;
 }
@@ -242,7 +251,7 @@ DriveCommand overrideCommand(SensorData sensorData){
  * Transmit DriveCommand to drive unit
  */
 void sendCommand(DriveCommand driveCommand){
-//  Serial.println("dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+  Serial.println("sendCommand dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
   Wire.beginTransmission(DRIVE_SUBSYS_ADDR);
   Wire.write((byte *)&driveCommand, sizeof driveCommand);
   Wire.endTransmission();
@@ -253,7 +262,9 @@ void sendCommand(DriveCommand driveCommand){
  */
 SensorData captureSensorData(){
   SensorData sensorData;
-  
+
+//  sensorData.voltage = 0.0;
+//  sensorData.distance = 0.0;
   sensorData.voltage = mapFloat(analogRead(V_SENSOR), VIN_MIN, VIN_MAX, VOUT_MIN, VOUT_MAX);
   sensorData.distance = pingHCSR04(); 
   

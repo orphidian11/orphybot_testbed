@@ -89,10 +89,10 @@ void setup() {
  * Receive the drive command and add it to the queue
  */
 void receiveDriveCommand(int numBytes){
-//  Serial.println("receiveDriveCommand");
+  Serial.println("receiveDriveCommand");
   DriveCommand driveCommand;
   Wire.readBytes((byte *)&driveCommand, numBytes);
-//  Serial.println("[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+  Serial.println("[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
   if (driveQueue.count() < DRIVE_QUEUE_LIMIT){
     driveQueue.push(driveCommand);
   }
@@ -137,6 +137,8 @@ void runDriveCommand(DriveCommand driveCommand){
   int dir = driveCommand.dir;
   int spd = driveCommand.spd;
   int durationMs = driveCommand.durationMs;
+
+  Serial.println("dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
   
   switch(dir){
     case 1: // forward

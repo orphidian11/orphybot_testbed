@@ -15,8 +15,12 @@
  *  0b011 - (3 bits) end
  */
 
+#include <SoftwareSerial.h>
+
 #define JX A0
 #define JY A1
+#define TX 10
+#define RX 11
 
 /** CONSTANTS **/
 // wheels
@@ -39,6 +43,8 @@ const int TX_DELAY_MS = 100;
 
 const unsigned long DELIM_START = 0b1100;
 const unsigned long DELIM_END = 0b011;
+const char DELIMITER_START = '['; 
+const char DELIMITER_END = ']'; 
 
 const int MSG_LENGTH = 12;
 const int COMMAND_LIST_SIZE = 10; // maximum of 10 commands can be sent
@@ -75,6 +81,8 @@ struct Telemetry {
   SensorData sensor;
 };
 
+SoftwareSerial hc12(TX,RX); 
+
 /*********
  * SETUP *
  *********/
@@ -84,6 +92,8 @@ void setup() {
   pinMode(JX, INPUT);
   pinMode(JY, INPUT);
 
+  hc12.begin(9600);
+  
   Serial.begin(9600);
   Serial.println("TX BEGIN!");
 }
@@ -93,6 +103,7 @@ void setup() {
  ********/
  
 void loop() {
+  hc12.write("test");
   // get the previous direction
   prevDir = dir;
 
@@ -131,14 +142,19 @@ void loop() {
   //  x = direction
   //  yyy = speed
   //  zzzz = duration
-  while(Serial.available()){
-    incomingByte = Serial.read();
-    readBuffer += char(incomingByte);
-    
-    if (incomingByte == ']'){
-      txEnd = true;
-    } 
-  }
+//  while(hc12.available()){
+//    Serial.println("test");
+//    incomingByte = hc12.read();
+//    readBuffer += char(incomingByte);
+//    
+//    if (incomingByte == DELIMITER_END){
+//      txEnd = true;
+//      Serial.println(readBuffer);
+//    } else if (incomingByte == DELIMITER_START) {
+//      txEnd = false;
+//      readBuffer = "";
+//    }
+//  }
   
   /** OUTPUT **/
   if (txEnd && !readBuffer.equals("")){
@@ -190,7 +206,9 @@ void transmit(unsigned long d, unsigned long s, unsigned long ms){
     txMsg = DELIM_START<<28 | d<<25 | s<<17 | ms<<3 | DELIM_END;
   
     // output
-    Serial.print("[" + String(txMsg) + "]");
+//    Serial.print("[" + String(txMsg) + "]");
+    Serial.println("dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms));
+    hc12.print("[" + String(txMsg) + "]");
     delay(TX_DELAY_MS);
 //  }
 }
