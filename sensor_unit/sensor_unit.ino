@@ -137,9 +137,10 @@ void loop() {
     
     if (incomingByte == DELIMITER_END){
       txEnd = true;
+//      Serial.println(readBuffer);
     } else if (incomingByte == DELIMITER_START) {
       txEnd = false;
-      readBuffer = "";
+//      readBuffer = "";
     }
   }
 
@@ -199,7 +200,7 @@ void loop() {
 
   // send back telemetry to tx_unit
   Telemetry telemetry = {driveData, sensorData};
-  sendTelemetry(telemetry);
+//  sendTelemetry(telemetry);
 } 
 
 /*********************
@@ -220,9 +221,9 @@ void sendTelemetry(Telemetry telemetry){
  */
 DriveData requestDriveData(){
   DriveData driveData;
-  driveData.spd = 0;
-//  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
-//  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
+//  driveData.spd = 0;
+  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
+  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
 //  Serial.println("SPD: " + String(driveData.spd));
   return driveData;
 }

@@ -1,6 +1,6 @@
 /**
  * OrphyBot Test Bed
- * Transmitter unit
+ * Transmitter unit (Arduino NANO)
  * Capture joystick signals and translate into binary transmissions
  * 
  * Format: (32 bits)
@@ -103,7 +103,6 @@ void setup() {
  ********/
  
 void loop() {
-  hc12.write("test");
   // get the previous direction
   prevDir = dir;
 
@@ -206,7 +205,7 @@ void transmit(unsigned long d, unsigned long s, unsigned long ms){
     txMsg = DELIM_START<<28 | d<<25 | s<<17 | ms<<3 | DELIM_END;
   
     // output
-//    Serial.print("[" + String(txMsg) + "]");
+//    Serial.println("[" + String(txMsg) + "]");
     Serial.println("dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms));
     hc12.print("[" + String(txMsg) + "]");
     delay(TX_DELAY_MS);
