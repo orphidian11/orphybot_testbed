@@ -2,6 +2,10 @@
  * OrphyBot Test Bed
  * Transmitter unit (Arduino NANO)
  * Capture joystick signals and translate into binary transmissions
+ *  
+ * Connected Devices:
+ * - (A5: x-axis, A4: y-axis, D7: button) Joystick
+ * - (D8: CE, D10:CSN, D13: SCK, D11: MOSI, D12: MISO) NRF24L01 Transceiver
  * 
  * Format: (32 bits)
  *  0x0FFFFFF8
@@ -15,12 +19,14 @@
  *  0b011 - (3 bits) end
  */
 
-#include <SoftwareSerial.h>
+#include <RHReliableDatagram.h>
+#include <SPI.h>
+#include <RH_NRF24.h>
 
 #define JX A0
 #define JY A1
-#define TX 10
-#define RX 11
+#define LEADER_ADDRESS 1
+#define FOLLOWER_ADDRESS 2
 
 /** CONSTANTS **/
 // wheels
@@ -49,6 +55,7 @@ const char DELIMITER_END = ']';
 const int MSG_LENGTH = 12;
 const int COMMAND_LIST_SIZE = 10; // maximum of 10 commands can be sent
 const int TELEMETRY_SIZE = 10;
+const int RESPONSE_TIMEOUT = 100;
 
 // inputs
 int xVal;
@@ -81,7 +88,8 @@ struct Telemetry {
   SensorData sensor;
 };
 
-SoftwareSerial hc12(TX,RX); 
+RH_NRF24 driver;
+RHReliableDatagram nrf24(driver, FOLLOWER_ADDRESS);
 
 /*********
  * SETUP *
@@ -92,7 +100,7 @@ void setup() {
   pinMode(JX, INPUT);
   pinMode(JY, INPUT);
 
-  hc12.begin(9600);
+  if (!nrf24.init()) Serial.println("init failed");
   
   Serial.begin(9600);
   Serial.println("TX BEGIN!");
@@ -154,33 +162,23 @@ void loop() {
 //      readBuffer = "";
 //    }
 //  }
-  
-  /** OUTPUT **/
-  if (txEnd && !readBuffer.equals("")){
-    // transmit manual commands
-    String commandList[COMMAND_LIST_SIZE];
-    int numberOfCommands = readBuffer.length() / MSG_LENGTH;
-    int i;
 
-    // break down the readBuffer into an array of commands
-    for (i = 0; i < numberOfCommands; i++){
-      commandList[i] = readBuffer.substring(0 + (i * MSG_LENGTH), MSG_LENGTH + (i * MSG_LENGTH));
-    }
+  // transmit joystick commands
+  transmit(dir, spd, durationMs);
 
-    // parse each command, then transmit
-    for (i = 0; i < numberOfCommands; i++){
-      dir = commandList[i].substring(1,2).toInt();
-      spd = commandList[i].substring(3,6).toInt();
-      durationMs = commandList[i].substring(7,11).toInt();
-      
-      transmit(dir, spd, durationMs);
-    }
+  // variable for holding response
+  // expected structure: 0: speed, 1: distance, 2: voltage, 3: current
+  uint8_t resp[RH_NRF24_MAX_MESSAGE_LEN];
+  uint8_t respLen = sizeof(resp);
+  uint8_t from;
 
-    readBuffer = "";
-    txEnd = false;
+  if (nrf24.recvfromAckTimeout(resp, &respLen, RESPONSE_TIMEOUT, &from)){
+    Serial.print("spd: " + String(resp[0])); // Serial.print("spd: "); // 
+    Serial.print(" / dis: " + String(resp[1])); // Serial.print(" / dis: "); // 
+    Serial.print(" / volt: " + String(resp[2])); // Serial.print(" / volt: "); // 
+    Serial.print(" / amps: " + String(resp[3])); // Serial.println(" / amps: "); // 
   } else {
-    // transmit joystick commands
-    transmit(dir, spd, durationMs);
+//    Serial.println("No response received");
   }
 }
 
@@ -195,19 +193,20 @@ void loop() {
  * @param ms duration in milliseconds
  */
 void transmit(unsigned long d, unsigned long s, unsigned long ms){
-  unsigned long txMsg = 0; // 32 bit message
+  // command to be sent
+  uint8_t cmd[3]; 
+  cmd[0] = dir; 
+  cmd[1] = spd; 
+  cmd[2] = durationMs; 
   
-  // transmit only if the direction is not stop, 
-  // or if it is stop, but the previous loop's dir is not stop
-  // this is to prevent constant transmit if it is stop
-//  if (d != 0){
-    // convert to string 
-    txMsg = DELIM_START<<28 | d<<25 | s<<17 | ms<<3 | DELIM_END;
+  Serial.println("dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms));
+
+  // send the command
+  if (nrf24.sendtoWait(cmd, sizeof(cmd), FOLLOWER_ADDRESS)) {
+//    Serial.println("Command sent");
+  } else {
+//    Serial.println("Failed sending command");
+  }
   
-    // output
-//    Serial.println("[" + String(txMsg) + "]");
-    Serial.println("dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms));
-    hc12.print("[" + String(txMsg) + "]");
-    delay(TX_DELAY_MS);
-//  }
+  delay(TX_DELAY_MS);
 }

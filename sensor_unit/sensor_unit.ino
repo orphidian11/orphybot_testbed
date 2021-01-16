@@ -7,7 +7,7 @@
  * - (A4:SDA, A5:SCL) Arduino UNO as follower unit via I2C 
  * - (A3) Voltage Sensor 
  * - (D2:Trig, D3:Echo) HC-SR04 Ultrasonic Distance Sensor
- * - (D0:RX, D1:TX) HC-12 transceiver
+ * - (D8: CE, D10:CSN, D13: SCK, D11: MOSI, D12: MISO) NRF24L01 Transceiver
  * 
  * Format of Input Received Thru HC-12:
  * [{direction}-{speed}-{duration}]
@@ -21,8 +21,10 @@
  * [1-099-2000] forward direction - speed 99 - 2 seconds
  */
  
-#include<Wire.h>
-#include <SoftwareSerial.h>
+#include <RHReliableDatagram.h>
+#include <SPI.h>
+#include <RH_NRF24.h>
+#include <Wire.h>
 
 // I2C followers addresses
 #define DRIVE_SUBSYS_ADDR 8
@@ -33,8 +35,8 @@
 #define HCSR04_TRIG 2
 #define HCSR04_ECHO 3
 #define LED_PIN 13 
-#define TX 10
-#define RX 11
+#define LEADER_ADDRESS 1
+#define FOLLOWER_ADDRESS 2
 
 // constants
 const float VIN_MIN = 0;
@@ -90,7 +92,8 @@ struct Telemetry {
   SensorData sensor;
 };
 
-SoftwareSerial hc12(TX,RX);
+RH_NRF24 driver;
+RHReliableDatagram nrf24(driver, FOLLOWER_ADDRESS);
 
 /*********
  * SETUP *
@@ -102,7 +105,7 @@ void setup() {
   pinMode(HCSR04_ECHO, INPUT);
   
   Wire.begin(); // run in leader mode
-  hc12.begin(9600);
+  if (!nrf24.init()) Serial.println("init failed");
 
   Serial.begin(9600);
   Serial.println("SENSOR UNIT BEGIN!");
@@ -129,49 +132,20 @@ void loop() {
   if ((sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX) || (sensorData.distance <= REVERSE_DISTANCE_MAX)){
     isSensorOverride = true;
   }
+  
+  // varriable for holding command
+  // expected structure: 0: direction, 1: speed, 2: duration
+  uint8_t cmd[RH_NRF24_MAX_MESSAGE_LEN];
+  uint8_t cmdLen = sizeof(cmd);
+  uint8_t from;
 
-  // capture HC-12 transmission
-  while (hc12.available()){
-    incomingByte = hc12.read();
-    readBuffer += char(incomingByte);
-    
-    if (incomingByte == DELIMITER_END){
-      txEnd = true;
-//      Serial.println(readBuffer);
-    } else if (incomingByte == DELIMITER_START) {
-      txEnd = false;
-//      readBuffer = "";
-    }
-  }
-
-  // parse the transmission
-  int dir = 0;
-  int spd = 0;
-  int durationMs = 0;
-  if (txEnd && readBuffer != ""){
-    int i;
-    unsigned long rxMsg = 0;
-    
-    // split the commands contained in the readBuffer
-    int numberOfCommands = readBuffer.length() / MSG_LENGTH;
-    String commandList[COMMAND_LIST_SIZE];
-    if (numberOfCommands <= 1){ 
-      // if there is only one command sent...
-      commandList[0] = readBuffer;
-    } else { 
-      // if there are multiple commands sent
-      for (i = 0; i < numberOfCommands; i++){
-        commandList[i] = readBuffer.substring(0 + (i * MSG_LENGTH), MSG_LENGTH + (i * MSG_LENGTH));
-      }
-    }
-    
-    // iterate through commandList
-    for (i = 0; i < numberOfCommands; i++){
+  // capture transmission
+  if (nrf24.available()){
+    if (nrf24.recvfromAck(cmd, &cmdLen, &from)){
       DriveCommand driveCommand;
-      rxMsg = atol(commandList[i].substring(1,12).c_str());
-      driveCommand.dir = (rxMsg & 0b00001110000000000000000000000000) >> 25; 
-      driveCommand.spd = (rxMsg & 0b00000001111111100000000000000000) >> 17; 
-      driveCommand.durationMs = (rxMsg & 0b00000000000000011111111111111000) >> 3; 
+      driveCommand.dir = cmd[0]; 
+      driveCommand.spd = cmd[1]; 
+      driveCommand.durationMs = cmd[2]; 
 
       // if the commands need to be overridden
       if (isSensorOverride){
@@ -181,13 +155,6 @@ void loop() {
       // send the commands to the drive unit
       sendCommand(driveCommand);
     }
-
-    readBuffer = "";
-    txEnd = false;
-  } else if (isSensorOverride) {
-    DriveCommand driveCommand = overrideCommand(sensorData);
-    sendCommand(driveCommand);
-    isSensorOverride = false;
   }
 
   // every [DRIVE_POLL_MS] milliseconds, get the drive data
@@ -200,7 +167,7 @@ void loop() {
 
   // send back telemetry to tx_unit
   Telemetry telemetry = {driveData, sensorData};
-//  sendTelemetry(telemetry);
+  sendTelemetry(telemetry, from);
 } 
 
 /*********************
@@ -210,10 +177,21 @@ void loop() {
 /**
  * Send back telemetry information to tx_unit
  */
-void sendTelemetry(Telemetry telemetry){
+void sendTelemetry(Telemetry telemetry, uint8_t to){
 //  Serial.println("(" + String(sizeof(telemetry)) + ") spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance));
-  hc12.write((byte *)&telemetry, sizeof telemetry);
-//  hc12.print("test");
+
+  // response to be sent
+  uint8_t resp[4];
+  resp[0] = telemetry.drive.spd; 
+  resp[1] = telemetry.sensor.distance; 
+  resp[2] = telemetry.sensor.voltage; 
+  resp[3] = 0; // current 
+
+  if (!nrf24.sendtoWait(resp, sizeof(resp), to)){
+    Serial.println("Failed sending response");
+  } else {
+//    Serial.println("Response sent");
+  }
 }
 
 /**
