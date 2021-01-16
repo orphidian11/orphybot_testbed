@@ -23,10 +23,14 @@
 #include <SPI.h>
 #include <RH_NRF24.h>
 
-#define JX A0
-#define JY A1
+#define NRF24L01_CHANNEL 10
 #define LEADER_ADDRESS 1
 #define FOLLOWER_ADDRESS 2
+
+// pinouts
+#define JX A5
+#define JY A4
+#define JZ 7
 
 /** CONSTANTS **/
 // wheels
@@ -45,17 +49,15 @@ const float J_MAX = 1023;
 // joystick neutral range tolerance 
 const float J_NEUT_MIN = 480;
 const float J_NEUT_MAX = 520;
-const int TX_DELAY_MS = 100;
-
 const unsigned long DELIM_START = 0b1100;
 const unsigned long DELIM_END = 0b011;
 const char DELIMITER_START = '['; 
 const char DELIMITER_END = ']'; 
-
 const int MSG_LENGTH = 12;
 const int COMMAND_LIST_SIZE = 10; // maximum of 10 commands can be sent
 const int TELEMETRY_SIZE = 10;
 const int RESPONSE_TIMEOUT = 100;
+const int TX_DELAY_MS = 100;
 
 // inputs
 int xVal;
@@ -70,6 +72,8 @@ char txString[12];
 boolean txEnd = false;
 byte incomingByte;
 String readBuffer = "";
+int currMs = 0;
+int prevMs = 0;
 
 // sensor data structure
 struct SensorData {
@@ -88,8 +92,7 @@ struct Telemetry {
   SensorData sensor;
 };
 
-RH_NRF24 driver;
-RHReliableDatagram nrf24(driver, FOLLOWER_ADDRESS);
+RH_NRF24 nrf24;
 
 /*********
  * SETUP *
@@ -99,11 +102,18 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(JX, INPUT);
   pinMode(JY, INPUT);
+  pinMode(JZ, INPUT);
 
+  // init nrf24l01
   if (!nrf24.init()) Serial.println("init failed");
+  if (!nrf24.setChannel(NRF24L01_CHANNEL)) Serial.println("setChannel failed");
+  if (!nrf24.setRF(RH_NRF24::DataRate2Mbps, RH_NRF24::TransmitPower0dBm)) Serial.println("setRF failed"); 
+//  if (!nrf24.setRF(RH_NRF24::DataRate2Mbps, RH_NRF24::TransmitPowerm6dBm)) Serial.println("setRF failed"); 
   
   Serial.begin(9600);
   Serial.println("TX BEGIN!");
+
+  currMs = millis();
 }
 
 /********
@@ -111,6 +121,9 @@ void setup() {
  ********/
  
 void loop() {
+  unsigned long beginMs = millis();
+//  Serial.println("!!");
+
   // get the previous direction
   prevDir = dir;
 
@@ -164,22 +177,7 @@ void loop() {
 //  }
 
   // transmit joystick commands
-  transmit(dir, spd, durationMs);
-
-  // variable for holding response
-  // expected structure: 0: speed, 1: distance, 2: voltage, 3: current
-  uint8_t resp[RH_NRF24_MAX_MESSAGE_LEN];
-  uint8_t respLen = sizeof(resp);
-  uint8_t from;
-
-  if (nrf24.recvfromAckTimeout(resp, &respLen, RESPONSE_TIMEOUT, &from)){
-    Serial.print("spd: " + String(resp[0])); // Serial.print("spd: "); // 
-    Serial.print(" / dis: " + String(resp[1])); // Serial.print(" / dis: "); // 
-    Serial.print(" / volt: " + String(resp[2])); // Serial.print(" / volt: "); // 
-    Serial.print(" / amps: " + String(resp[3])); // Serial.println(" / amps: "); // 
-  } else {
-//    Serial.println("No response received");
-  }
+  transmitCommands(dir, spd, durationMs);
 }
 
 /*********************
@@ -192,21 +190,40 @@ void loop() {
  * @param s speed
  * @param ms duration in milliseconds
  */
-void transmit(unsigned long d, unsigned long s, unsigned long ms){
+void transmitCommands(unsigned long d, unsigned long s, unsigned long ms){
+  unsigned long beginMs = millis();
+  
   // command to be sent
   uint8_t cmd[3]; 
   cmd[0] = dir; 
   cmd[1] = spd; 
   cmd[2] = durationMs; 
-  
-  Serial.println("dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms));
 
-  // send the command
-  if (nrf24.sendtoWait(cmd, sizeof(cmd), FOLLOWER_ADDRESS)) {
-//    Serial.println("Command sent");
-  } else {
-//    Serial.println("Failed sending command");
-  }
+  nrf24.send(cmd, sizeof(cmd));
+  nrf24.waitPacketSent();
+  if (nrf24.waitAvailableTimeout(RESPONSE_TIMEOUT)){
+    Serial.println("SEND >> dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms) + " (" + String(millis() - beginMs) + "ms)");
   
-  delay(TX_DELAY_MS);
+    // receive telemetry
+    receiveTelemetry();
+  }
+}
+
+/**
+ * Receive telemetry from SENSOR unit
+ */
+void receiveTelemetry(){
+  unsigned long beginMs = millis();
+  
+  // variable for holding response
+  // expected structure: 0: speed, 1: distance, 2: voltage, 3: current
+  uint8_t resp[RH_NRF24_MAX_MESSAGE_LEN];
+  uint8_t respLen = sizeof(resp);
+  uint8_t from;
+
+  if (nrf24.available()){
+    if (nrf24.recv(resp, &respLen)){
+      Serial.println("RECV << spd: " + String(resp[0]) + " / dis: " + String(resp[1]) + " / volt: " + String(resp[2]) + " / amps: " + String(resp[3]) + " (" + String(millis() - beginMs) + "ms)"); 
+    }
+  }
 }

@@ -26,17 +26,19 @@
 #include <RH_NRF24.h>
 #include <Wire.h>
 
-// I2C followers addresses
+#define NRF24L01_CHANNEL 10
+#define LEADER_ADDRESS 1
+#define FOLLOWER_ADDRESS 2
 #define DRIVE_SUBSYS_ADDR 8
 #define DRIVE_DATA_ANSSIZE 2
 #define SENSORS_SUBSYS_ADDR 9
 #define SENSORS_SUBSYS_ANSSIZE 8 // number of characters
+
+// pinouts
 #define V_SENSOR A3
 #define HCSR04_TRIG 2
 #define HCSR04_ECHO 3
 #define LED_PIN 13 
-#define LEADER_ADDRESS 1
-#define FOLLOWER_ADDRESS 2
 
 // constants
 const float VIN_MIN = 0;
@@ -70,20 +72,20 @@ float vOut;
 
 // sensor data structure
 struct SensorData {
-  float voltage; 
+  uint8_t voltage; 
   float distance; // in meters
 };
 
 // drive data structure 
 struct DriveData {
-  int spd;
+  uint8_t spd;
 };
 
 // drive command structure
 struct DriveCommand {
-  int dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
-  int spd; // 0 to 255
-  int durationMs; // in milliseconds
+  uint8_t dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
+  uint8_t spd; // 0 to 255
+  uint8_t durationMs; // in milliseconds
 };
 
 // telemetry structure 
@@ -92,8 +94,7 @@ struct Telemetry {
   SensorData sensor;
 };
 
-RH_NRF24 driver;
-RHReliableDatagram nrf24(driver, FOLLOWER_ADDRESS);
+RH_NRF24 nrf24;
 
 /*********
  * SETUP *
@@ -105,7 +106,12 @@ void setup() {
   pinMode(HCSR04_ECHO, INPUT);
   
   Wire.begin(); // run in leader mode
+  
+  // init nrf24l01
   if (!nrf24.init()) Serial.println("init failed");
+  if (!nrf24.setChannel(NRF24L01_CHANNEL)) Serial.println("setChannel failed");
+  if (!nrf24.setRF(RH_NRF24::DataRate2Mbps, RH_NRF24::TransmitPower0dBm)) Serial.println("setRF failed"); 
+//  if (!nrf24.setRF(RH_NRF24::DataRate2Mbps, RH_NRF24::TransmitPowerm6dBm)) Serial.println("setRF failed"); 
 
   Serial.begin(9600);
   Serial.println("SENSOR UNIT BEGIN!");
@@ -124,6 +130,8 @@ void requestSensorInfo(){
  * LOOP *
  ********/
 void loop() {
+  unsigned long beginMs = millis();  
+
   // capture sensor data
   SensorData sensorData = captureSensorData();
 
@@ -132,42 +140,8 @@ void loop() {
   if ((sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX) || (sensorData.distance <= REVERSE_DISTANCE_MAX)){
     isSensorOverride = true;
   }
-  
-  // varriable for holding command
-  // expected structure: 0: direction, 1: speed, 2: duration
-  uint8_t cmd[RH_NRF24_MAX_MESSAGE_LEN];
-  uint8_t cmdLen = sizeof(cmd);
-  uint8_t from;
 
-  // capture transmission
-  if (nrf24.available()){
-    if (nrf24.recvfromAck(cmd, &cmdLen, &from)){
-      DriveCommand driveCommand;
-      driveCommand.dir = cmd[0]; 
-      driveCommand.spd = cmd[1]; 
-      driveCommand.durationMs = cmd[2]; 
-
-      // if the commands need to be overridden
-      if (isSensorOverride){
-        driveCommand = overrideCommand(sensorData);
-      }
-
-      // send the commands to the drive unit
-      sendCommand(driveCommand);
-    }
-  }
-
-  // every [DRIVE_POLL_MS] milliseconds, get the drive data
-  currMillis = millis();
-  DriveData driveData;
-  if ((currMillis - prevMillis) > DRIVE_POLL_MS){
-    prevMillis = currMillis;
-    driveData = requestDriveData();
-  }
-
-  // send back telemetry to tx_unit
-  Telemetry telemetry = {driveData, sensorData};
-  sendTelemetry(telemetry, from);
+  receiveCommand(isSensorOverride, sensorData);
 } 
 
 /*********************
@@ -175,11 +149,55 @@ void loop() {
  *********************/
 
 /**
+ * Receive transmission from TX unit
+ */
+void receiveCommand(boolean isSensorOverride, SensorData sensorData){
+  unsigned long beginMs = millis();
+  
+  // varriable for holding command
+  // expected structure: 0: direction, 1: speed, 2: duration
+  uint8_t cmd[RH_NRF24_MAX_MESSAGE_LEN];
+  uint8_t cmdLen = sizeof(cmd);
+
+  // capture transmission
+  if (nrf24.available()){
+    if (nrf24.recv(cmd, &cmdLen)){
+      DriveCommand driveCommand;
+      driveCommand.dir = cmd[0]; 
+      driveCommand.spd = cmd[1]; 
+      driveCommand.durationMs = cmd[2];
+      
+      Serial.println("RECV << dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs) +  + " (" + String(millis() - beginMs) + "ms)");
+
+      // if the commands need to be overridden
+      if (isSensorOverride){
+        driveCommand = overrideCommand(sensorData);
+      }
+
+      // every [DRIVE_POLL_MS] milliseconds, get the drive data
+      currMillis = millis();
+      DriveData driveData;
+      if ((currMillis - prevMillis) > DRIVE_POLL_MS){
+        prevMillis = currMillis;
+        driveData = requestDriveData();
+      }
+      
+      // send the commands to the drive unit
+//      sendCommand(driveCommand);
+      
+      // send back telemetry to tx_unit
+      Telemetry telemetry = {driveData, sensorData};
+      sendTelemetry(telemetry);
+    }
+  }
+}
+
+/**
  * Send back telemetry information to tx_unit
  */
-void sendTelemetry(Telemetry telemetry, uint8_t to){
-//  Serial.println("(" + String(sizeof(telemetry)) + ") spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance));
-
+void sendTelemetry(Telemetry telemetry){
+  unsigned long beginMs = millis();
+  
   // response to be sent
   uint8_t resp[4];
   resp[0] = telemetry.drive.spd; 
@@ -187,11 +205,10 @@ void sendTelemetry(Telemetry telemetry, uint8_t to){
   resp[2] = telemetry.sensor.voltage; 
   resp[3] = 0; // current 
 
-  if (!nrf24.sendtoWait(resp, sizeof(resp), to)){
-    Serial.println("Failed sending response");
-  } else {
-//    Serial.println("Response sent");
-  }
+  nrf24.send(resp, sizeof(resp));
+  nrf24.waitPacketSent();
+  
+  Serial.println("SEND >> (" + String(sizeof(telemetry)) + ") spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance) + " (" + String(millis() - beginMs) + "ms)");
 }
 
 /**
@@ -199,9 +216,9 @@ void sendTelemetry(Telemetry telemetry, uint8_t to){
  */
 DriveData requestDriveData(){
   DriveData driveData;
-//  driveData.spd = 0;
-  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
-  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
+  driveData.spd = 0;
+//  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
+//  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
 //  Serial.println("SPD: " + String(driveData.spd));
   return driveData;
 }
@@ -230,7 +247,7 @@ DriveCommand overrideCommand(SensorData sensorData){
  * Transmit DriveCommand to drive unit
  */
 void sendCommand(DriveCommand driveCommand){
-  Serial.println("sendCommand dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+//  Serial.println("sendCommand dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
   Wire.beginTransmission(DRIVE_SUBSYS_ADDR);
   Wire.write((byte *)&driveCommand, sizeof driveCommand);
   Wire.endTransmission();
@@ -242,10 +259,11 @@ void sendCommand(DriveCommand driveCommand){
 SensorData captureSensorData(){
   SensorData sensorData;
 
-//  sensorData.voltage = 0.0;
-//  sensorData.distance = 0.0;
-  sensorData.voltage = mapFloat(analogRead(V_SENSOR), VIN_MIN, VIN_MAX, VOUT_MIN, VOUT_MAX);
-  sensorData.distance = pingHCSR04(); 
+//  sensorData.voltage = mapFloat(analogRead(V_SENSOR), VIN_MIN, VIN_MAX, VOUT_MIN, VOUT_MAX);
+//  sensorData.voltage = analogRead(V_SENSOR);
+//  sensorData.distance = pingHCSR04(); 
+  sensorData.voltage = 99;
+  sensorData.distance = 88; 
   
 //  Serial.println("V: " + String(sensorData.voltage) + " / D: " + String(sensorData.distance));
 
