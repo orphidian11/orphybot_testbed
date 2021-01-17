@@ -4,7 +4,7 @@
  * In charge of running the motors. As follower, receives drive instructions from Sensor Unit via I2C
  * 
  * Connected Devices:
- * - (D2-D13) 2x L298N motor drivers with 2x 9v DC motors each 
+ * - (D7-D9, D11-D13) 1x L298N motor drivers with 2x 9v DC motors each 
  * - (A4:SDA, A5:SCL) Arduino NANO as leader unit via I2C 
  */
 
@@ -37,24 +37,24 @@
 #define R_R_B 13
 
 // constants
-const int DIR_MIN = 0;
-const int DIR_MAX = 4;
-const int SPD_MIN = 0;
-const int SPD_MAX = 255;
-const int DURATION_MS_MIN = 0;
-const int DURATION_MS_MAX = 9999;
+const uint8_t DIR_MIN = 0;
+const uint8_t DIR_MAX = 4;
+const uint8_t SPD_MIN = 0;
+const uint8_t SPD_MAX = 255;
+const uint8_t DURATION_MS_MIN = 0;
+const uint8_t DURATION_MS_MAX = 9999;
 const int DRIVE_QUEUE_LIMIT = 1; 
 
 // drive data structure 
 struct DriveData {
-  int spd;
+  uint8_t spd;
 };
 
 // drive command structure
 struct DriveCommand {
-  int dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
-  int spd; // 0 to 255
-  int durationMs; // in milliseconds
+  uint8_t dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
+  uint8_t spd; // 0 to 255
+  uint8_t durationMs; // in milliseconds
 };
 
 QueueList<DriveCommand> driveQueue;
@@ -105,7 +105,7 @@ void sendSpeedData(){
 //  Serial.println("sendSpeedData");
   DriveData driveData;
   driveData.spd = 100; // dummy data for now
-//  Serial.println("driveData: " + String(driveData.spd) + " / sizeof " + String(sizeof(driveData)));
+  Serial.println("SEND >> driveData: " + String(driveData.spd) + " / sizeof " + String(sizeof(driveData)));
   Wire.write((byte *)&driveData, sizeof driveData);
 }
 
@@ -116,7 +116,7 @@ void loop() {
   // check the drive queue
   while(!driveQueue.isEmpty()){
     DriveCommand driveCommand = driveQueue.peek();
-//    Serial.println("**[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+    Serial.println("**[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
     runDriveCommand(driveCommand);
     driveQueue.pop();
   }
@@ -134,11 +134,11 @@ void runDriveCommand(DriveCommand driveCommand){
     return; 
   }
   
-  int dir = driveCommand.dir;
-  int spd = driveCommand.spd;
-  int durationMs = driveCommand.durationMs;
+  uint8_t dir = driveCommand.dir;
+  uint8_t spd = driveCommand.spd;
+  uint8_t durationMs = driveCommand.durationMs;
 
-  Serial.println("dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+  Serial.println("RUN << dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
   
   switch(dir){
     case 1: // forward
@@ -154,16 +154,16 @@ void runDriveCommand(DriveCommand driveCommand){
       setRearRightMotor(spd, 2);
       break;
     case 3: // left
-      setFrontLeftMotor(spd, 2);
-      setFrontRightMotor(spd, 1);
-      setRearLeftMotor(spd, 2);
-      setRearRightMotor(spd, 1);
-      break;
-    case 4: // right
       setFrontLeftMotor(spd, 1);
       setFrontRightMotor(spd, 2);
       setRearLeftMotor(spd, 1);
       setRearRightMotor(spd, 2);
+      break;
+    case 4: // right
+      setFrontLeftMotor(spd, 2);
+      setFrontRightMotor(spd, 1);
+      setRearLeftMotor(spd, 2);
+      setRearRightMotor(spd, 1);
       break;
     case 0: // stop
     default:
@@ -190,7 +190,7 @@ void runDriveCommand(DriveCommand driveCommand){
  * @param spd speed of the motor [0-255]
  * @param dir direction [0: stop, 1: forward, 2: backward]
  */
-void setFrontLeftMotor(int spd, int dir){
+void setFrontLeftMotor(uint8_t spd, uint8_t dir){
   setMotor(F_L_SPD, F_L_A, F_L_B, spd, dir);
 }
 
@@ -199,7 +199,7 @@ void setFrontLeftMotor(int spd, int dir){
  * @param spd speed of the motor [0-255]
  * @param dir direction [0: stop, 1: forward, 2: backward]
  */
-void setFrontRightMotor(int spd, int dir){
+void setFrontRightMotor(uint8_t spd, uint8_t dir){
   setMotor(F_R_SPD, F_R_A, F_R_B, spd, dir);
 }
 
@@ -208,7 +208,7 @@ void setFrontRightMotor(int spd, int dir){
  * @param spd speed of the motor [0-255]
  * @param dir direction [0: stop, 1: forward, 2: backward]
  */
-void setRearLeftMotor(int spd, int dir){
+void setRearLeftMotor(uint8_t spd, uint8_t dir){
   setMotor(R_L_SPD, R_L_A, R_L_B, spd, dir);
 }
 
@@ -217,7 +217,7 @@ void setRearLeftMotor(int spd, int dir){
  * @param spd speed of the motor [0-255]
  * @param dir direction [0: stop, 1: forward, 2: backward]
  */
-void setRearRightMotor(int spd, int dir){
+void setRearRightMotor(uint8_t spd, uint8_t dir){
   setMotor(R_R_SPD, R_R_A, R_R_B, spd, dir);
 }
 
@@ -229,15 +229,15 @@ void setRearRightMotor(int spd, int dir){
  * @param spd speed of the motor [0-255]
  * @param dir direction [0: stop, 1: forward, 2: backward]
  */
-void setMotor(int spdPin, int aPin, int bPin, int spd, int dir){
+void setMotor(uint8_t spdPin, uint8_t aPin, uint8_t bPin, uint8_t spd, uint8_t dir){
   analogWrite(spdPin, spd);
   
   if (dir == 1){
-    digitalWrite(aPin, HIGH);
-    digitalWrite(bPin, LOW);
-  } else if (dir == 2) {
-    digitalWrite(aPin, LOW);
     digitalWrite(bPin, HIGH);
+    digitalWrite(aPin, LOW);
+  } else if (dir == 2) {
+    digitalWrite(bPin, LOW);
+    digitalWrite(aPin, HIGH);
   } else {
     digitalWrite(aPin, LOW);
     digitalWrite(bPin, LOW);

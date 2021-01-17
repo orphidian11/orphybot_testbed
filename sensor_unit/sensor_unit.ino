@@ -170,9 +170,9 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
       Serial.println("RECV << dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs) +  + " (" + String(millis() - beginMs) + "ms)");
 
       // if the commands need to be overridden
-      if (isSensorOverride){
-        driveCommand = overrideCommand(sensorData);
-      }
+//      if (isSensorOverride){
+//        driveCommand = overrideCommand(sensorData);
+//      }
 
       // every [DRIVE_POLL_MS] milliseconds, get the drive data
       currMillis = millis();
@@ -183,7 +183,7 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
       }
       
       // send the commands to the drive unit
-//      sendCommand(driveCommand);
+      sendCommand(driveCommand);
       
       // send back telemetry to tx_unit
       Telemetry telemetry = {driveData, sensorData};
@@ -260,10 +260,10 @@ SensorData captureSensorData(){
   SensorData sensorData;
 
 //  sensorData.voltage = mapFloat(analogRead(V_SENSOR), VIN_MIN, VIN_MAX, VOUT_MIN, VOUT_MAX);
-//  sensorData.voltage = analogRead(V_SENSOR);
+  sensorData.voltage = analogRead(V_SENSOR);
 //  sensorData.distance = pingHCSR04(); 
-  sensorData.voltage = 99;
-  sensorData.distance = 88; 
+//  sensorData.voltage = 99;
+  sensorData.distance = 0; 
   
 //  Serial.println("V: " + String(sensorData.voltage) + " / D: " + String(sensorData.distance));
 
