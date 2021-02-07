@@ -125,8 +125,8 @@ void receiveDriveCommand(int numBytes){
 void sendSpeedData(){
 //  Serial.println("sendSpeedData");
   DriveData driveData;
-  driveData.spd = 100; // dummy data for now
-  Serial.println("SEND >> driveData: " + String(driveData.spd) + " / sizeof " + String(sizeof(driveData)));
+  driveData.spd = 1023; // dummy data for now
+//  Serial.println("SEND >> driveData: " + String(driveData.spd) + " / sizeof " + String(sizeof(driveData)));
   Wire.write((byte *)&driveData, sizeof driveData);
 }
 
@@ -221,13 +221,13 @@ void runDriveCommand(DriveCommand driveCommand) {
   /** OUTPUT **/
   analogWrite(F_L_SPD, lSpd - lSpdRedux);
   analogWrite(R_L_SPD, lSpd - lSpdRedux);
-//  Serial.print("LSPD: " + String(lSpd - lSpdRedux) + " / ");
-  Serial.print("LSPD: " + String(lSpd) + " - " + String(lSpdRedux) + " = " + String(lSpd - lSpdRedux) + " / ");
+  Serial.print("LSPD: " + String(lSpd - lSpdRedux) + " / ");
+//  Serial.print("LSPD: " + String(lSpd) + " - " + String(lSpdRedux) + " = " + String(lSpd - lSpdRedux) + " / ");
   
   analogWrite(F_R_SPD, rSpd - rSpdRedux);
   analogWrite(R_R_SPD, rSpd - rSpdRedux);
-//  Serial.println("RSPD: " + String(rSpd - rSpdRedux) + " / ");
-  Serial.println("RSPD: " + String(rSpd) + " - " + String(rSpdRedux) + " = " + String(rSpd - rSpdRedux) + " / ");
+  Serial.println("RSPD: " + String(rSpd - rSpdRedux) + " / ");
+//  Serial.println("RSPD: " + String(rSpd) + " - " + String(rSpdRedux) + " = " + String(rSpd - rSpdRedux) + " / ");
 }
 
 /**

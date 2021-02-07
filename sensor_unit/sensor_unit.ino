@@ -81,9 +81,9 @@ struct DriveCommand {
 
 // sensor data structure
 struct SensorData {
-  int volt; 
-  int amps;
-  int distPingUs; // ping duration in microseconds
+  int volt; // [0-255]
+  int amps; // [0-255]
+  unsigned long distPingUs; // ping duration in microseconds (4 bytes)
 };
 
 // drive data structure 
@@ -163,13 +163,13 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
       driveCommand.sw = cmd[6]; 
       driveCommand.durationMs = cmd[7];
       
-      Serial.print("RECV << "); 
-      Serial.print("x: " + String(driveCommand.x) + " / ");
-      Serial.print("y: " + String(driveCommand.y) + " / ");
-      Serial.print("sw: " + String(driveCommand.sw) + " / ");
-      Serial.print("spd: " + String(driveCommand.spd) + " / "); 
-      Serial.print("durationMs: " + String(driveCommand.durationMs));
-      Serial.println("(" + String(millis() - beginMs) + "ms)");
+//      Serial.print("RECV << "); 
+//      Serial.print("x: " + String(driveCommand.x) + " / ");
+//      Serial.print("y: " + String(driveCommand.y) + " / ");
+//      Serial.print("sw: " + String(driveCommand.sw) + " / ");
+//      Serial.print("spd: " + String(driveCommand.spd) + " / "); 
+//      Serial.print("durationMs: " + String(driveCommand.durationMs));
+//      Serial.println("(" + String(millis() - beginMs) + "ms)");
 
       // if the commands need to be overridden
 //      if (isSensorOverride){
@@ -188,8 +188,8 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
       sendCommand(driveCommand);
       
       // send back telemetry to tx_unit
-//      Telemetry telemetry = {driveData, sensorData};
-//      sendTelemetry(telemetry);
+      Telemetry telemetry = {driveData, sensorData};
+      sendTelemetry(telemetry);
     }
   }
 }
@@ -200,21 +200,45 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
 void sendTelemetry(Telemetry telemetry){
   unsigned long beginMs = millis();
   
+//  unsigned long distPingUs = 0b10101010111100001100110011111111; 
+//  unsigned long distPingUs = 4294967295; 
+//  uint8_t data[4] = { (distPingUs >> 24), (distPingUs >> 16), (distPingUs >> 8), (distPingUs) };
+//  unsigned long y = data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3];
+//  Serial.println(String(distPingUs) + " >> " + String(y));
+//  Serial.print(distPingUs, BIN);
+//  Serial.print(" >> ");
+//  Serial.print(data[0], BIN);
+//  Serial.print(" | ");
+//  Serial.print(data[1], BIN);
+//  Serial.print(" | ");
+//  Serial.print(data[2], BIN);
+//  Serial.print(" | ");
+//  Serial.print(data[3], BIN);
+//  Serial.print(" >> ");
+//  Serial.println(String(y));
+  
+  
   // response to be sent
-  uint8_t resp[4];
-  resp[0] = telemetry.drive.spd; 
-  resp[1] = telemetry.sensor.distPingUs; 
-  resp[2] = telemetry.sensor.volt; 
-  resp[3] = telemetry.sensor.amps; // current 
+  uint8_t resp[10];
+  resp[0] = highByte(telemetry.drive.spd);
+  resp[1] = lowByte(telemetry.drive.spd); 
+  resp[2] = (telemetry.sensor.distPingUs >> 24);
+  resp[3] = (telemetry.sensor.distPingUs >> 16);
+  resp[4] = (telemetry.sensor.distPingUs >> 8);
+  resp[5] = telemetry.sensor.distPingUs; 
+  resp[6] = highByte(telemetry.sensor.volt); 
+  resp[7] = lowByte(telemetry.sensor.volt);
+  resp[8] = highByte(telemetry.sensor.amps); // current 
+  resp[9] = lowByte(telemetry.sensor.amps);
 
   nrf24.send(resp, sizeof(resp));
   nrf24.waitPacketSent();
   
-//  Serial.print("SEND >> ");
-//  Serial.print("spd: " + String(telemetry.drive.spd) + " / ");
-//  Serial.print("dis: " + String(telemetry.sensor.distPingUs) + " / ");
-//  Serial.print("volt: " + String(telemetry.sensor.volt) + " / ");
-//  Serial.println("amps: " + String(telemetry.sensor.amps) + " ");
+  Serial.print("SEND >> ");
+  Serial.print("spd: " + String(telemetry.drive.spd) + " / ");
+  Serial.print("dis: " + String(telemetry.sensor.distPingUs) + " / ");
+  Serial.print("volt: " + String(telemetry.sensor.volt) + " / ");
+  Serial.println("amps: " + String(telemetry.sensor.amps) + " ");
 }
 
 /**
@@ -222,9 +246,9 @@ void sendTelemetry(Telemetry telemetry){
  */
 DriveData requestDriveData(){
   DriveData driveData;
-  driveData.spd = 0;
-//  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
-//  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
+//  driveData.spd = 1023;
+  Wire.requestFrom(DRIVE_SUBSYS_ADDR, DRIVE_DATA_ANSSIZE);
+  Wire.readBytes((byte *)&driveData, DRIVE_DATA_ANSSIZE);
 //  Serial.println("SPD: " + String(driveData.spd));
   return driveData;
 }
@@ -267,9 +291,9 @@ void sendCommand(DriveCommand driveCommand){
 SensorData captureSensorData(){
   SensorData sensorData;
 
-  sensorData.volt = 0; // analogRead(V_SENSOR);
-  sensorData.distPingUs = 0; // pingHCSR04(); 
-  sensorData.amps = 0; 
+  sensorData.volt = analogRead(V_SENSOR);
+  sensorData.distPingUs = pingHCSR04(); 
+  sensorData.amps = 20; 
   
 //  Serial.println("V: " + String(sensorData.volt) + " / D: " + String(sensorData.distPingUs) + " / A: " + String(sensorData.amps));
 
@@ -287,17 +311,17 @@ float mapFloat(float in, float x1, float x2, float y1, float y2){
 /**
  * Send a pulse on the HC-SR04 and get the distance
  */
-uint8_t pingHCSR04(){
+unsigned long pingHCSR04(){
   // create a wave ping
-  digitalWrite(HCSR04_TRIG, LOW);
-  delayMicroseconds(HC_SR04_PING_US);
-  digitalWrite(HCSR04_TRIG, HIGH);
-  delayMicroseconds(HC_SR04_PING_US);
-  digitalWrite(HCSR04_TRIG, LOW);
+//  digitalWrite(HCSR04_TRIG, LOW);
+//  delayMicroseconds(HC_SR04_PING_US);
+//  digitalWrite(HCSR04_TRIG, HIGH);
+//  delayMicroseconds(HC_SR04_PING_US);
+//  digitalWrite(HCSR04_TRIG, LOW);
 
-  uint8_t distPingUs = pulseIn(HCSR04_ECHO, HIGH);
-
-  delay(HC_SR04_WAIT_US);
+  unsigned long distPingUs = 4294967295; // pulseIn(HCSR04_ECHO, HIGH);
+//
+//  delay(HC_SR04_WAIT_US);
 
   return distPingUs;
 }

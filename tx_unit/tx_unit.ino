@@ -75,9 +75,9 @@ struct DriveCommand {
 
 // sensor data structure
 struct SensorData {
-  int volt; 
-  int amps;
-  int distPingUs; // ping duration in microseconds
+  int volt; // [0-255]
+  int amps; // [0-255]
+  unsigned long distPingUs; // ping duration in microseconds (4 bytes)
 };
 
 // drive data structure 
@@ -157,13 +157,14 @@ void transmitCommands(DriveCommand driveCommand){
 
   nrf24.send(txCmd, sizeof(txCmd));
   nrf24.waitPacketSent();
-    Serial.print("SEND >> "); 
-    Serial.print("x: " + String(driveCommand.x) + " / ");
-    Serial.print("y: " + String(driveCommand.y) + " / ");
-    Serial.print("sw: " + String(driveCommand.sw) + " / ");
-    Serial.print("spd: " + String(driveCommand.spd) + " / "); 
-    Serial.print("durationMs: " + String(driveCommand.durationMs));
-    Serial.println("(" + String(millis() - beginMs) + "ms)");
+  
+//  Serial.print("SEND >> "); 
+//  Serial.print("x: " + String(driveCommand.x) + " / ");
+//  Serial.print("y: " + String(driveCommand.y) + " / ");
+//  Serial.print("sw: " + String(driveCommand.sw) + " / ");
+//  Serial.print("spd: " + String(driveCommand.spd) + " / "); 
+//  Serial.print("durationMs: " + String(driveCommand.durationMs));
+//  Serial.println("(" + String(millis() - beginMs) + "ms)");
   
   if (nrf24.waitAvailableTimeout(RESPONSE_TIMEOUT)){
     // receive telemetry
@@ -195,17 +196,17 @@ void receiveTelemetry(){
  */
 Telemetry readTelemetry(uint8_t resp[]){
   Telemetry telemetry;
-
-  telemetry.drive.spd = resp[0];
-  telemetry.sensor.distPingUs = resp[1];
-  telemetry.sensor.volt = resp[2];
-  telemetry.sensor.amps = resp[3];
   
-//  Serial.print("RECV << ");
-//  Serial.print("spd: " + String(telemetry.drive.spd) + " / ");
-//  Serial.print("dis: " + String(telemetry.sensor.distPingUs) + " / ");
-//  Serial.print("volt: " + String(telemetry.sensor.volt) + " / ");
-//  Serial.println("amps: " + String(telemetry.sensor.amps) + " ");
+  telemetry.drive.spd = ((int) resp[0] << 8) | resp[1]; 
+  telemetry.sensor.distPingUs = resp[2] << 24 | resp[3] << 16 | resp[4] << 8 | resp[5];
+  telemetry.sensor.volt = ((int) resp[6] << 8) | resp[7]; 
+  telemetry.sensor.amps = ((int) resp[8] << 8) | resp[9]; // current 
+  
+  Serial.print("RECV << ");
+  Serial.print("spd: " + String(telemetry.drive.spd) + " / ");
+  Serial.print("dis: " + String(telemetry.sensor.distPingUs) + " / ");
+  Serial.print("volt: " + String(telemetry.sensor.volt) + " / ");
+  Serial.println("amps: " + String(telemetry.sensor.amps) + " ");
 
   return telemetry;
 }
