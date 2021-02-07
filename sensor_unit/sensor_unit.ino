@@ -70,22 +70,25 @@ unsigned long currMillis = 0;
 float distance;
 float vOut;
 
+// strcture for commands to be transmitted
+struct DriveCommand {
+  int x; // joystick x-axis
+  int y; // joystick y-axis
+  int sw; // joystick switch
+  int spd; // speed
+  int durationMs; // duration in milliseconds
+};
+
 // sensor data structure
 struct SensorData {
-  uint8_t voltage; 
-  float distance; // in meters
+  int volt; 
+  int amps;
+  int distPingUs; // ping duration in microseconds
 };
 
 // drive data structure 
 struct DriveData {
-  uint8_t spd;
-};
-
-// drive command structure
-struct DriveCommand {
-  uint8_t dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
-  uint8_t spd; // 0 to 255
-  uint8_t durationMs; // in milliseconds
+  int spd;
 };
 
 // telemetry structure 
@@ -117,15 +120,6 @@ void setup() {
   Serial.println("SENSOR UNIT BEGIN!");
 }
 
-/**
- * Callback function when sensor information is requested
- */
-void requestSensorInfo(){
-  SensorData data = { vOut, distance };
-  Wire.write((byte *)&data, sizeof data);
-//  Serial.println("R => V: " + String(vOut) + " / D: " + String(distance) + " (" + sizeof(data) + ")");
-}
-
 /********
  * LOOP *
  ********/
@@ -137,9 +131,9 @@ void loop() {
 
   // check sensor values if override is needed
   boolean isSensorOverride = false; // true or false
-  if ((sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX) || (sensorData.distance <= REVERSE_DISTANCE_MAX)){
-    isSensorOverride = true;
-  }
+//  if ((sensorData.distPingUs >= STOP_DISTANCE_MIN && sensorData.distPingUs <= STOP_DISTANCE_MAX) || (sensorData.distance <= REVERSE_DISTANCE_MAX)){
+//    isSensorOverride = true;
+//  }
 
   receiveCommand(isSensorOverride, sensorData);
 } 
@@ -163,11 +157,19 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
   if (nrf24.available()){
     if (nrf24.recv(cmd, &cmdLen)){
       DriveCommand driveCommand;
-      driveCommand.dir = cmd[0]; 
-      driveCommand.spd = cmd[1]; 
-      driveCommand.durationMs = cmd[2];
+      driveCommand.x = ((int) cmd[0] << 8) | cmd[1]; 
+      driveCommand.y = ((int) cmd[2] << 8) | cmd[3]; 
+      driveCommand.spd = ((int) cmd[4] << 8) | cmd[5]; 
+      driveCommand.sw = cmd[6]; 
+      driveCommand.durationMs = cmd[7];
       
-      Serial.println("RECV << dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs) +  + " (" + String(millis() - beginMs) + "ms)");
+      Serial.print("RECV << "); 
+      Serial.print("x: " + String(driveCommand.x) + " / ");
+      Serial.print("y: " + String(driveCommand.y) + " / ");
+      Serial.print("sw: " + String(driveCommand.sw) + " / ");
+      Serial.print("spd: " + String(driveCommand.spd) + " / "); 
+      Serial.print("durationMs: " + String(driveCommand.durationMs));
+      Serial.println("(" + String(millis() - beginMs) + "ms)");
 
       // if the commands need to be overridden
 //      if (isSensorOverride){
@@ -186,8 +188,8 @@ void receiveCommand(boolean isSensorOverride, SensorData sensorData){
       sendCommand(driveCommand);
       
       // send back telemetry to tx_unit
-      Telemetry telemetry = {driveData, sensorData};
-      sendTelemetry(telemetry);
+//      Telemetry telemetry = {driveData, sensorData};
+//      sendTelemetry(telemetry);
     }
   }
 }
@@ -201,14 +203,18 @@ void sendTelemetry(Telemetry telemetry){
   // response to be sent
   uint8_t resp[4];
   resp[0] = telemetry.drive.spd; 
-  resp[1] = telemetry.sensor.distance; 
-  resp[2] = telemetry.sensor.voltage; 
-  resp[3] = 0; // current 
+  resp[1] = telemetry.sensor.distPingUs; 
+  resp[2] = telemetry.sensor.volt; 
+  resp[3] = telemetry.sensor.amps; // current 
 
   nrf24.send(resp, sizeof(resp));
   nrf24.waitPacketSent();
   
-  Serial.println("SEND >> (" + String(sizeof(telemetry)) + ") spd: " + String(telemetry.drive.spd) + " / v: " + String(telemetry.sensor.voltage) + " / d: " + String(telemetry.sensor.distance) + " (" + String(millis() - beginMs) + "ms)");
+//  Serial.print("SEND >> ");
+//  Serial.print("spd: " + String(telemetry.drive.spd) + " / ");
+//  Serial.print("dis: " + String(telemetry.sensor.distPingUs) + " / ");
+//  Serial.print("volt: " + String(telemetry.sensor.volt) + " / ");
+//  Serial.println("amps: " + String(telemetry.sensor.amps) + " ");
 }
 
 /**
@@ -232,13 +238,14 @@ DriveCommand overrideCommand(SensorData sensorData){
   
   driveCommand.spd = 255;
   driveCommand.durationMs = 0;
-  driveCommand.dir = 0;
+//  driveCommand.x = 0;
+//  driveCommand.y = 0;
   
-  if (sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX){
-    driveCommand.dir = 0; // stop if STOP_DISTANCE is reached
-  } else if (sensorData.distance <= REVERSE_DISTANCE_MAX){
-    driveCommand.dir = 2; // reverse if REVERSE_DISTANCE is reached
-  }
+//  if (sensorData.distance >= STOP_DISTANCE_MIN && sensorData.distance <= STOP_DISTANCE_MAX){
+//    driveCommand.dir = 0; // stop if STOP_DISTANCE is reached
+//  } else if (sensorData.distance <= REVERSE_DISTANCE_MAX){
+//    driveCommand.dir = 2; // reverse if REVERSE_DISTANCE is reached
+//  }
 
   return driveCommand;
 }
@@ -251,6 +258,7 @@ void sendCommand(DriveCommand driveCommand){
   Wire.beginTransmission(DRIVE_SUBSYS_ADDR);
   Wire.write((byte *)&driveCommand, sizeof driveCommand);
   Wire.endTransmission();
+  delay(1);
 }
 
 /**
@@ -259,13 +267,11 @@ void sendCommand(DriveCommand driveCommand){
 SensorData captureSensorData(){
   SensorData sensorData;
 
-//  sensorData.voltage = mapFloat(analogRead(V_SENSOR), VIN_MIN, VIN_MAX, VOUT_MIN, VOUT_MAX);
-  sensorData.voltage = analogRead(V_SENSOR);
-//  sensorData.distance = pingHCSR04(); 
-//  sensorData.voltage = 99;
-  sensorData.distance = 0; 
+  sensorData.volt = 0; // analogRead(V_SENSOR);
+  sensorData.distPingUs = 0; // pingHCSR04(); 
+  sensorData.amps = 0; 
   
-//  Serial.println("V: " + String(sensorData.voltage) + " / D: " + String(sensorData.distance));
+//  Serial.println("V: " + String(sensorData.volt) + " / D: " + String(sensorData.distPingUs) + " / A: " + String(sensorData.amps));
 
   return sensorData;
 }
@@ -281,7 +287,7 @@ float mapFloat(float in, float x1, float x2, float y1, float y2){
 /**
  * Send a pulse on the HC-SR04 and get the distance
  */
-float pingHCSR04(){
+uint8_t pingHCSR04(){
   // create a wave ping
   digitalWrite(HCSR04_TRIG, LOW);
   delayMicroseconds(HC_SR04_PING_US);
@@ -289,11 +295,17 @@ float pingHCSR04(){
   delayMicroseconds(HC_SR04_PING_US);
   digitalWrite(HCSR04_TRIG, LOW);
 
-  float pingUs = pulseIn(HCSR04_ECHO, HIGH);
+  uint8_t distPingUs = pulseIn(HCSR04_ECHO, HIGH);
 
   delay(HC_SR04_WAIT_US);
 
-  float distance = (MPS * (pingUs / 1000000)) / 2; // distance = rate * time
+  return distPingUs;
+}
 
+/**
+ * Compute the distance captured from HC-SR04
+ */
+float computeDistPing(uint8_t distPingUs){
+  float distance = (MPS * (distPingUs / 1000000)) / 2; // distance = rate * time
   return distance;
 }

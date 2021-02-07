@@ -6,6 +6,9 @@
  * Connected Devices:
  * - (D7-D9, D11-D13) 1x L298N motor drivers with 2x 9v DC motors each 
  * - (A4:SDA, A5:SCL) Arduino NANO as leader unit via I2C 
+ * 
+ * NOTE:
+ * Code is based on XX_l298n_driver_03 sketch
  */
 
 #include<Wire.h>
@@ -17,44 +20,54 @@
 #define SENSORS_SUBSYS_ANSSIZE 8 // character length
 
 // Front Left Motor
-#define F_L_SPD 3 // pwm
+#define F_L_SPD 10 // pwm
 #define F_L_A 2
 #define F_L_B 4
 
 // Front Right Motor
-#define F_R_SPD 10 // pwm
+#define F_R_SPD 3 // pwm
 #define F_R_A 6
 #define F_R_B 5
 
 // Rear Left Motor
-#define R_L_SPD 9 // pwm
+#define R_L_SPD 11 // pwm
 #define R_L_A 8
 #define R_L_B 7
 
 // Rear Right Motor
-#define R_R_SPD 11 // pwm
+#define R_R_SPD 9 // pwm
 #define R_R_A 12
 #define R_R_B 13
 
-// constants
-const uint8_t DIR_MIN = 0;
-const uint8_t DIR_MAX = 4;
-const uint8_t SPD_MIN = 0;
-const uint8_t SPD_MAX = 255;
-const uint8_t DURATION_MS_MIN = 0;
-const uint8_t DURATION_MS_MAX = 9999;
+/** CONSTANTS **/
+// motor speed ranges
+const int SPD_STOP = 0;
+const int SPD_MIN = 100;
+const int SPD_MAX = 255;
+const int DURATION_MS_MIN = 0;
+const int DURATION_MS_MAX = 9999;
 const int DRIVE_QUEUE_LIMIT = 1; 
+
+// joystick ranges
+const float J_MIN = 0;
+const float J_MAX = 1023;
+
+// joystick neutral range tolerance 
+const int J_NEUT_MIN = 498; // 500
+const int J_NEUT_MAX = 503; // 500
 
 // drive data structure 
 struct DriveData {
-  uint8_t spd;
+  int spd;
 };
 
-// drive command structure
+// strcture for commands to be transmitted
 struct DriveCommand {
-  uint8_t dir; // 0 - stop; 1 - forward; 2 - reverse; 3 - left; 4 - right
-  uint8_t spd; // 0 to 255
-  uint8_t durationMs; // in milliseconds
+  int x; // joystick x-axis
+  int y; // joystick y-axis
+  int sw; // joystick switch
+  int spd; // speed
+  int durationMs; // duration in milliseconds
 };
 
 QueueList<DriveCommand> driveQueue;
@@ -92,10 +105,18 @@ void receiveDriveCommand(int numBytes){
 //  Serial.println("receiveDriveCommand");
   DriveCommand driveCommand;
   Wire.readBytes((byte *)&driveCommand, numBytes);
-//  Serial.println("[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
-  if (driveQueue.count() < DRIVE_QUEUE_LIMIT){
-    driveQueue.push(driveCommand);
-  }
+//  Serial.print("[" + String(driveQueue.count()) + "]);
+//  if (driveQueue.count() < DRIVE_QUEUE_LIMIT){
+//    driveQueue.push(driveCommand);
+//    Serial.print("RECV << "); 
+//    Serial.print("x: " + String(driveCommand.x) + " / ");
+//    Serial.print("y: " + String(driveCommand.y) + " / ");
+//    Serial.print("sw: " + String(driveCommand.sw) + " / ");
+//    Serial.print("spd: " + String(driveCommand.spd) + " / "); 
+//    Serial.println("durationMs: " + String(driveCommand.durationMs));
+    
+    runDriveCommand(driveCommand);
+//  }
 }
 
 /**
@@ -114,132 +135,172 @@ void sendSpeedData(){
  ********/
 void loop() {
   // check the drive queue
-  while(!driveQueue.isEmpty()){
-    DriveCommand driveCommand = driveQueue.peek();
-    Serial.println("**[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
-    runDriveCommand(driveCommand);
-    driveQueue.pop();
-  }
+//  while(!driveQueue.isEmpty()){
+//    DriveCommand driveCommand = driveQueue.peek();
+//    Serial.println("**[" + String(driveQueue.count()) + "] / dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
+//    runDriveCommand(driveCommand);
+//    driveQueue.pop();
+//  }
+//  Serial.println("1");
 }
 
 /*********************
  * PRIVATE FUNCTIONS *
  *********************/
 
-void runDriveCommand(DriveCommand driveCommand){
-  // verify that all the values are valid 
-  if (driveCommand.dir < DIR_MIN || driveCommand.dir > DIR_MAX 
-    || driveCommand.spd < SPD_MIN || driveCommand.spd > SPD_MAX
-    || driveCommand.durationMs < DURATION_MS_MIN || driveCommand.durationMs > DURATION_MS_MAX){
-    return; 
+void runDriveCommand(DriveCommand driveCommand) {
+  int lSpd;
+  int rSpd;
+  int lSpdRedux;
+  int rSpdRedux;
+
+  /** INPUT **/
+  int xVal = driveCommand.x;
+  int yVal = driveCommand.y;
+
+  Serial.print("EXEC >> ");
+
+  /** PROCESS **/
+  // forward/reverse/stop
+  if (yVal <= J_NEUT_MIN){
+    // forward
+    lSpd = rSpd = map(yVal, J_NEUT_MIN, J_MIN, SPD_MIN, SPD_MAX);
+    setForward();
+  } else if (yVal >= J_NEUT_MAX) {
+    // reverse
+    lSpd = rSpd = map(yVal, J_NEUT_MAX, J_MAX, SPD_MIN, SPD_MAX);
+    setReverse();
+//  } else {
+//    lSpd = rSpd = SPD_STOP;
+//    motorStop();
   }
-  
-  uint8_t dir = driveCommand.dir;
-  uint8_t spd = driveCommand.spd;
-  uint8_t durationMs = driveCommand.durationMs;
 
-  Serial.println("RUN << dir: " + String(driveCommand.dir) + " / spd: " + String(driveCommand.spd) + " / durationMs: " + String(driveCommand.durationMs));
-  
-  switch(dir){
-    case 1: // forward
-      setFrontLeftMotor(spd, 1);
-      setFrontRightMotor(spd, 1);
-      setRearLeftMotor(spd, 1);
-      setRearRightMotor(spd, 1);
-      break;
-    case 2: // reverse
-      setFrontLeftMotor(spd, 2);
-      setFrontRightMotor(spd, 2);
-      setRearLeftMotor(spd, 2);
-      setRearRightMotor(spd, 2);
-      break;
-    case 3: // left
-      setFrontLeftMotor(spd, 1);
-      setFrontRightMotor(spd, 2);
-      setRearLeftMotor(spd, 1);
-      setRearRightMotor(spd, 2);
-      break;
-    case 4: // right
-      setFrontLeftMotor(spd, 2);
-      setFrontRightMotor(spd, 1);
-      setRearLeftMotor(spd, 2);
-      setRearRightMotor(spd, 1);
-      break;
-    case 0: // stop
-    default:
-      setFrontLeftMotor(spd, 0);
-      setFrontRightMotor(spd, 0);
-      setRearLeftMotor(spd, 0);
-      setRearRightMotor(spd, 0);
-      break;
-  }
-  
-  // if delay is provided, proceed then stop
-  if (durationMs > 0){
-    delay(durationMs);
-    setFrontLeftMotor(spd, 0);
-    setFrontRightMotor(spd, 0);
-    setRearLeftMotor(spd, 0);
-    setRearRightMotor(spd, 0);
-  } 
-  
-}
-
-/**
- * Set motion of front left motor
- * @param spd speed of the motor [0-255]
- * @param dir direction [0: stop, 1: forward, 2: backward]
- */
-void setFrontLeftMotor(uint8_t spd, uint8_t dir){
-  setMotor(F_L_SPD, F_L_A, F_L_B, spd, dir);
-}
-
-/**
- * Set motion of front right motor
- * @param spd speed of the motor [0-255]
- * @param dir direction [0: stop, 1: forward, 2: backward]
- */
-void setFrontRightMotor(uint8_t spd, uint8_t dir){
-  setMotor(F_R_SPD, F_R_A, F_R_B, spd, dir);
-}
-
-/**
- * Set motion of rear left motor
- * @param spd speed of the motor [0-255]
- * @param dir direction [0: stop, 1: forward, 2: backward]
- */
-void setRearLeftMotor(uint8_t spd, uint8_t dir){
-  setMotor(R_L_SPD, R_L_A, R_L_B, spd, dir);
-}
-
-/**
- * Set motion of rear right motor
- * @param spd speed of the motor [0-255]
- * @param dir direction [0: stop, 1: forward, 2: backward]
- */
-void setRearRightMotor(uint8_t spd, uint8_t dir){
-  setMotor(R_R_SPD, R_R_A, R_R_B, spd, dir);
-}
-
-/**
- * General function for setting motion of all motors
- * @param spdPin speed pin
- * @param aPin A pin
- * @param bPin B pin
- * @param spd speed of the motor [0-255]
- * @param dir direction [0: stop, 1: forward, 2: backward]
- */
-void setMotor(uint8_t spdPin, uint8_t aPin, uint8_t bPin, uint8_t spd, uint8_t dir){
-  analogWrite(spdPin, spd);
-  
-  if (dir == 1){
-    digitalWrite(bPin, HIGH);
-    digitalWrite(aPin, LOW);
-  } else if (dir == 2) {
-    digitalWrite(bPin, LOW);
-    digitalWrite(aPin, HIGH);
+  // left/right turn
+  if (xVal <= J_NEUT_MIN){
+    // left turn
+    lSpdRedux = map(xVal, J_NEUT_MIN, J_MIN, SPD_MIN, lSpd);
+    rSpdRedux = 0;
+  } else if (xVal >= J_NEUT_MAX) {
+    // right turn
+    lSpdRedux = 0;
+    rSpdRedux = map(xVal, J_NEUT_MAX, J_MAX, SPD_MIN, rSpd);
   } else {
-    digitalWrite(aPin, LOW);
-    digitalWrite(bPin, LOW);
+    lSpdRedux = rSpdRedux = SPD_STOP;
   }
+  
+  // if neither forward nor reverse, but was set to left or right, do pivot turn
+  if ((yVal > J_NEUT_MIN) &&  (yVal < J_NEUT_MAX)){ // yVal is within neutral zone
+    if (xVal <= J_NEUT_MIN){
+      // pivot left
+      lSpdRedux = rSpdRedux = SPD_STOP;
+      lSpd = rSpd = map(xVal, J_NEUT_MIN, J_MIN, SPD_MIN, SPD_MAX);
+      setLeftReverse();
+      setRightForward();
+    } else if (xVal >= J_NEUT_MAX) {
+      // pivot right
+      lSpdRedux = rSpdRedux = SPD_STOP;
+      lSpd = rSpd = map(xVal, J_NEUT_MAX, J_MAX, SPD_MIN, SPD_MAX);
+      setRightReverse();
+      setLeftForward();
+    } else {
+      // full stop
+      lSpd = rSpd = SPD_STOP;
+      lSpdRedux = rSpdRedux = SPD_STOP;
+      motorStop();
+    }
+  } 
+
+  // to prevent negative speed reduction, set reduction to 0 when speed is 0
+  if (lSpd == SPD_MIN){
+    lSpdRedux = SPD_STOP;
+  } 
+  if (rSpd == SPD_MIN){
+    rSpdRedux = SPD_STOP;
+  }
+
+  /** OUTPUT **/
+  analogWrite(F_L_SPD, lSpd - lSpdRedux);
+  analogWrite(R_L_SPD, lSpd - lSpdRedux);
+//  Serial.print("LSPD: " + String(lSpd - lSpdRedux) + " / ");
+  Serial.print("LSPD: " + String(lSpd) + " - " + String(lSpdRedux) + " = " + String(lSpd - lSpdRedux) + " / ");
+  
+  analogWrite(F_R_SPD, rSpd - rSpdRedux);
+  analogWrite(R_R_SPD, rSpd - rSpdRedux);
+//  Serial.println("RSPD: " + String(rSpd - rSpdRedux) + " / ");
+  Serial.println("RSPD: " + String(rSpd) + " - " + String(rSpdRedux) + " = " + String(rSpd - rSpdRedux) + " / ");
+}
+
+/**
+ * Both wheels stop
+ */
+void motorStop(){
+  Serial.print("STOP / ");
+
+  // left
+  digitalWrite(F_L_A, LOW);
+  digitalWrite(F_L_B, LOW);
+  
+  digitalWrite(R_L_A, LOW);
+  digitalWrite(R_L_B, LOW);
+
+  // right
+  digitalWrite(F_R_A, LOW);
+  digitalWrite(F_R_B, LOW);
+  
+  digitalWrite(R_R_A, LOW);
+  digitalWrite(R_R_B, LOW);
+}
+
+void setForward(){
+  setLeftForward();
+  setRightForward();
+}
+
+void setLeftForward(){
+  Serial.print("LFWD / ");
+
+  // left
+  digitalWrite(F_R_A, LOW);
+  digitalWrite(F_R_B, HIGH);
+  
+  digitalWrite(R_R_A, LOW);
+  digitalWrite(R_R_B, HIGH);
+}
+
+void setRightForward(){
+  Serial.print("RFWD / ");
+
+  // right
+  digitalWrite(F_L_A, LOW);
+  digitalWrite(F_L_B, HIGH);
+  
+  digitalWrite(R_L_A, LOW);
+  digitalWrite(R_L_B, HIGH);
+}
+
+void setReverse(){
+  setLeftReverse();
+  setRightReverse();
+}
+
+void setLeftReverse(){
+  Serial.print("LREV / ");
+  
+  // left
+  digitalWrite(F_R_A, HIGH);
+  digitalWrite(F_R_B, LOW);
+  
+  digitalWrite(R_R_A, HIGH);
+  digitalWrite(R_R_B, LOW);
+}
+
+void setRightReverse(){
+  Serial.print("RREV / ");
+  
+  // right
+  digitalWrite(F_L_A, HIGH);
+  digitalWrite(F_L_B, LOW);
+  
+  digitalWrite(R_L_A, HIGH);
+  digitalWrite(R_L_B, LOW);
 }

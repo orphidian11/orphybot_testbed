@@ -6,17 +6,6 @@
  * Connected Devices:
  * - (A5: x-axis, A4: y-axis, D7: button) Joystick
  * - (D8: CE, D10:CSN, D13: SCK, D11: MOSI, D12: MISO) NRF24L01 Transceiver
- * 
- * Format: (32 bits)
- *  0x0FFFFFF8
- *  0b0000 111 11111111 11111111111111 000
- * 
- * Where: 
- *  0b1100 - (4 bits) begin
- *  0b111 - (3 bits) direction (0b000 - stop; 0b001 - forward; 0b010 - reverse; 0b011 - left; 0b100 - right)
- *  0b11111111 - (8 bits) speed (0 to 255)
- *  0b11111111111111 - (14 bits) duration in milliseconds (0 to 16383 milliseconds)
- *  0b011 - (3 bits) end
  */
 
 #include <RHReliableDatagram.h>
@@ -75,10 +64,20 @@ String readBuffer = "";
 int currMs = 0;
 int prevMs = 0;
 
+// strcture for commands to be transmitted
+struct DriveCommand {
+  int x; // joystick x-axis
+  int y; // joystick y-axis
+  int sw; // joystick switch
+  int spd; // speed
+  int durationMs; // duration in milliseconds
+};
+
 // sensor data structure
 struct SensorData {
-  float voltage; 
-  float distance; // in meters
+  int volt; 
+  int amps;
+  int distPingUs; // ping duration in microseconds
 };
 
 // drive data structure 
@@ -102,7 +101,7 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(JX, INPUT);
   pinMode(JY, INPUT);
-  pinMode(JZ, INPUT);
+  pinMode(JZ, INPUT_PULLUP);
 
   // init nrf24l01
   if (!nrf24.init()) Serial.println("init failed");
@@ -114,6 +113,11 @@ void setup() {
   Serial.println("TX BEGIN!");
 
   currMs = millis();
+
+//  int x = analogRead(JX);
+//  uint8_t arr[2] = {highByte(x), lowByte(x)};
+//  int y = ((int) arr[0] << 8) | arr[1];
+//  Serial.println(String(x) + " >> " + String(y));
 }
 
 /********
@@ -121,63 +125,13 @@ void setup() {
  ********/
  
 void loop() {
-  unsigned long beginMs = millis();
-//  Serial.println("!!");
-
-  // get the previous direction
-  prevDir = dir;
-
   /** INPUT **/
-  xVal = analogRead(JX);
-  yVal = analogRead(JY);
+  DriveCommand cmd = captureCommands();
 
-  /** PROCESS **/
-  // direction
-  // for this version, forward/reverse takes precedence over left/right
-  if (yVal <= J_NEUT_MIN){ // forward
-    dir = 1;
-  } else if (yVal >= J_NEUT_MAX){ // reverse
-    dir = 2;
-  } else if (xVal <= J_NEUT_MIN){ // left turn
-    dir = 3;
-  } else if (xVal >= J_NEUT_MAX) { // right turn
-    dir = 4;
-  } else { // stop
-    dir = 0;
-  }
-
-  // speed
-  if (dir != 0){
-    spd = 255;
-  } else {
-    spd = 0;
-  }
-
-  // duration
-  durationMs = 0; // for now, always 0
-
-  // capture any manual commands
-  // format: [x-yyy-zzzz]
-  // where: 
-  //  x = direction
-  //  yyy = speed
-  //  zzzz = duration
-//  while(hc12.available()){
-//    Serial.println("test");
-//    incomingByte = hc12.read();
-//    readBuffer += char(incomingByte);
-//    
-//    if (incomingByte == DELIMITER_END){
-//      txEnd = true;
-//      Serial.println(readBuffer);
-//    } else if (incomingByte == DELIMITER_START) {
-//      txEnd = false;
-//      readBuffer = "";
-//    }
-//  }
+  // TODO: capture any manual commands
 
   // transmit joystick commands
-  transmitCommands(dir, spd, durationMs);
+  transmitCommands(cmd);
 }
 
 /*********************
@@ -186,24 +140,32 @@ void loop() {
  
 /**
  * Transmit the commands
- * @param d direction
- * @param s speed
- * @param ms duration in milliseconds
  */
-void transmitCommands(unsigned long d, unsigned long s, unsigned long ms){
+void transmitCommands(DriveCommand driveCommand){
   unsigned long beginMs = millis();
   
-  // command to be sent
-  uint8_t cmd[3]; 
-  cmd[0] = dir; 
-  cmd[1] = spd; 
-  cmd[2] = durationMs; 
+  // command to be sent (break 
+  uint8_t txCmd[8]; 
+  txCmd[0] = highByte(driveCommand.x); 
+  txCmd[1] = lowByte(driveCommand.x); 
+  txCmd[2] = highByte(driveCommand.y); 
+  txCmd[3] = lowByte(driveCommand.y); 
+  txCmd[4] = highByte(driveCommand.spd);
+  txCmd[5] = lowByte(driveCommand.spd);
+  txCmd[6] = driveCommand.sw;
+  txCmd[7] = driveCommand.durationMs;
 
-  nrf24.send(cmd, sizeof(cmd));
+  nrf24.send(txCmd, sizeof(txCmd));
   nrf24.waitPacketSent();
-  if (nrf24.waitAvailableTimeout(RESPONSE_TIMEOUT)){
-    Serial.println("SEND >> dir: " + String(d) + " / spd: " + String(s) + " / durationMs: " + String(ms) + " (" + String(millis() - beginMs) + "ms)");
+    Serial.print("SEND >> "); 
+    Serial.print("x: " + String(driveCommand.x) + " / ");
+    Serial.print("y: " + String(driveCommand.y) + " / ");
+    Serial.print("sw: " + String(driveCommand.sw) + " / ");
+    Serial.print("spd: " + String(driveCommand.spd) + " / "); 
+    Serial.print("durationMs: " + String(driveCommand.durationMs));
+    Serial.println("(" + String(millis() - beginMs) + "ms)");
   
+  if (nrf24.waitAvailableTimeout(RESPONSE_TIMEOUT)){
     // receive telemetry
     receiveTelemetry();
   }
@@ -220,10 +182,47 @@ void receiveTelemetry(){
   uint8_t resp[RH_NRF24_MAX_MESSAGE_LEN];
   uint8_t respLen = sizeof(resp);
   uint8_t from;
-
+  
   if (nrf24.available()){
     if (nrf24.recv(resp, &respLen)){
-      Serial.println("RECV << spd: " + String(resp[0]) + " / dis: " + String(resp[1]) + " / volt: " + String(resp[2]) + " / amps: " + String(resp[3]) + " (" + String(millis() - beginMs) + "ms)"); 
+      Telemetry telemetry = readTelemetry(resp);
     }
   }
+}
+
+/**
+ * Read telemtry data from the array
+ */
+Telemetry readTelemetry(uint8_t resp[]){
+  Telemetry telemetry;
+
+  telemetry.drive.spd = resp[0];
+  telemetry.sensor.distPingUs = resp[1];
+  telemetry.sensor.volt = resp[2];
+  telemetry.sensor.amps = resp[3];
+  
+//  Serial.print("RECV << ");
+//  Serial.print("spd: " + String(telemetry.drive.spd) + " / ");
+//  Serial.print("dis: " + String(telemetry.sensor.distPingUs) + " / ");
+//  Serial.print("volt: " + String(telemetry.sensor.volt) + " / ");
+//  Serial.println("amps: " + String(telemetry.sensor.amps) + " ");
+
+  return telemetry;
+}
+
+/**
+ * Capture and build command object
+ */
+DriveCommand captureCommands(){
+  DriveCommand cmd;
+  
+  cmd.x = analogRead(JX);
+  cmd.y = analogRead(JY);
+  cmd.sw = !digitalRead(JZ);
+  cmd.spd = 255; // raw data from potentiometer
+  cmd.durationMs = 0;
+
+//  Serial.println(String(analogRead(JX)) + ">>" + String(cmd.x));
+
+  return cmd;
 }
