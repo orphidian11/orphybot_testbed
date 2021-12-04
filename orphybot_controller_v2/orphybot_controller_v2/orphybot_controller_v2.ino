@@ -2,6 +2,12 @@
  * Orphybot Controller v2.0
  */
 
+#include<Wire.h>
+
+// I2C followers address
+#define I2C_CTRL_ADD 11
+#define I2C_ARM_ADD 4 
+
 // pin setup 
 #define L_X_PIN A1
 #define L_Y_PIN A0
@@ -10,14 +16,14 @@
 #define R_Y_PIN A2
 #define R_BTN_PIN 3
 
-const int L_X_MIN_NEUT = 530;
-const int L_X_MAX_NEUT = 550;
-const int L_Y_MIN_NEUT = 530;
-const int L_Y_MAX_NEUT = 550;
-const int R_X_MIN_NEUT = 540;
-const int R_X_MAX_NEUT = 555;
-const int R_Y_MIN_NEUT = 530;
-const int R_Y_MAX_NEUT = 550;
+const int L_X_MIN_NEUT = 500; // 530; // 500
+const int L_X_MAX_NEUT = 520; // 550; // 520
+const int L_Y_MIN_NEUT = 500; // 530; // 500
+const int L_Y_MAX_NEUT = 520; // 550; // 520
+const int R_X_MIN_NEUT = 505; // 540; // 505
+const int R_X_MAX_NEUT = 525; // 555; // 525
+const int R_Y_MIN_NEUT = 500; // 530; // 500
+const int R_Y_MAX_NEUT = 520; // 550; // 520
 
 const int X_MIN_LIMIT = 0; // mm
 const int Y_MIN_LIMIT = 0; // mm
@@ -62,8 +68,15 @@ void setup() {
   pinMode(R_BTN_PIN, INPUT_PULLUP);
 
   // initialize coords
+  // TODO: add startup calibration here for neutral values
   resetCoords();
+  
+  Wire.begin(); // leader mode
+
+  Serial.println("*** Orphybot Controller starting... ***");
 }
+
+byte x = 0;
 
 void loop() {
   // read controller inputs
@@ -71,7 +84,9 @@ void loop() {
   
   // convert values
   convertValues(input);
+
   // transmit values
+  transmitValues();
 
   Serial.println("");
 }
@@ -134,11 +149,18 @@ void convertValues(InputValues input){
     resetCoords();
   }
 
+  String txt;
+  if (coords.lBtn == true){
+    txt = "true";
+  } else {
+    txt = "false";
+  }
   Serial.print(" => [x,y,deg,lbtn,rbtn]: [" + 
     String(coords.x) + "," + 
     String(coords.y) + "," + 
     String(coords.deg) + "," +
-    String(coords.lBtn) + "," +
+    txt + "," +
+    // String(coords.lBtn) + "," +
     String(coords.rBtn) + "]");
 }
 
@@ -152,4 +174,16 @@ void resetCoords(){
   coords.deg = DEG_MAX_LIMIT / 2;
   coords.lBtn = false;
   coords.rBtn = false;
+}
+
+/**
+ * Send the values via i2c
+ */
+void transmitValues(){
+  Wire.beginTransmission(I2C_ARM_ADD);
+  Wire.write((byte *) &coords, sizeof(coords));
+  Wire.endTransmission();
+
+  Serial.print(" [TRANSMITTED!]");
+  delay(100);
 }
